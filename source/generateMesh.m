@@ -117,6 +117,7 @@ switch mesh.type
                 eta = eta/eta(end);
                 eta = (eta+1)/2;
         end
+        fixPoints
         
         XPhysical = (xf-xi)*eta+xi;
         

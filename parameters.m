@@ -32,7 +32,8 @@ domain.zi = 0;
 domain.zf = 1;
 
 %% Flow type
-flowType.name = 'boundaryLayerIsothermal';
+% flowType.name = 'boundaryLayerIsothermal';
+flowType.name = 'boundaryLayerAdiabatic';
 
 flowType.initial.type = 'blasius'; % uniform, blasius or file
 %flowType.initial.blasiusFit = 0;

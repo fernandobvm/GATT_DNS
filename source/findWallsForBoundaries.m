@@ -64,6 +64,8 @@ for i = 1:mesh.nx
                 wallStarts = find([localWall(1,1,k) squeeze(diff(localWall(1,:,k),[],2)==1)]);
                 wallEnds = find([squeeze(diff(localWall(1,:,k),[],2)==-1) localWall(1,end,k)]);
                 kStart = k;
+                disp("wallEnds:")
+                disp(wallEnds)
             end
             if k == mesh.nz || any(localWall(1,:,k) ~= localWall(1,:,k+1)) % If reached end in z or wall change, record boundary
                 for j = 1:length(wallStarts)
