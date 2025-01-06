@@ -381,6 +381,8 @@ class FlowParameters:
         self.Pr = Pr        # Prandtl number
         self.T0 = T0        # Temperature
         self.gamma = gamma  # Ratio of specific heats
+        self.lowerWallVelocity = None
+        self.upperWallVelocity = None
 
 class Domain:
     def __init__(self, xi, xf, yi, yf, zi, zf):
@@ -454,7 +456,7 @@ class MatrixDirection:
         self.nTypes = nTypes  # number of matrix types
 
 class Disturbance:
-    def __init__(self, x_range, y_range, z_range, var, disturb_type, par, active=False, fit_points=False):
+    def __init__(self, x_range = None, y_range = None, z_range = None, var = None, disturb_type = None, par = None, active=False, fit_points=False, ind = None, forcing = False):
         self.x = x_range
         self.y = y_range
         self.z = z_range
@@ -464,6 +466,11 @@ class Disturbance:
         self.par = par
         self.active = active
         self.fitPoints = fit_points
+        self.ind = ind
+        self.forcing = forcing
+        self.X = None
+        self.Y = None
+        self.Z = None
 class Disturbances:
     def __init__(self, disturbanceType, amplitude, frequency, phase):
         self.disturbanceType = disturbanceType  # Type of disturbance (e.g., acoustic, entropy, etc.)
@@ -482,7 +489,7 @@ class Cavity:
 
 class FlowType:
     def __init__(self, flowCondition = None, flowRegime = None):
-        self.name = 'boundaryLayerAdiabatic'
+        self.name = 'boundaryLayerIsothermal'
         self.initial_type = 'blasius'
         self.initial_flowFile = None
         self.initial_meshFile = None
@@ -580,16 +587,17 @@ def get_domain_slices(n, p):
     # Por exemplo, se 10 nós são divididos em 3 fatias, a divisão seria 3 3 4
     
     if n == 1:
-        return np.array([[0], [0]])
+        return np.array([[1], [1]])
     
     nPointsBase = n // p
     nCeil = n - nPointsBase * p
     nPoints = np.ones(p, dtype=int) * nPointsBase
-    nPoints[-nCeil:] = nPointsBase + 1
+    if nCeil > 0:
+        nPoints[-nCeil:] = nPointsBase + 1
     
     slices = np.zeros((2, p), dtype=int)
-    slices[1, :] = np.cumsum(nPoints) - 1
-    slices[0, 0] = 0
+    slices[1, :] = np.cumsum(nPoints)
+    slices[0, 0] = 1
     slices[0, 1:] = slices[1, :-1] + 1
     
     return slices

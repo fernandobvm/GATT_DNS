@@ -13,4 +13,8 @@
 !/etc/
 !/examples/
 !/dockerfile
+!/py/
+/py/Re600-Ma05-L10-D5
+/py/__pycache__
+/py/source/__pycache__
 *.asv

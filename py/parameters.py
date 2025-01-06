@@ -31,7 +31,7 @@ def parameters():
     flow_type = FlowType()
     flow_type.cav.append(Cavity([x1, x2], [-D, 0], [-np.inf, np.inf]))
 
-    disturb = Disturbance(x_range=[25, 50], y_range=[0, 0], z_range=[-np.inf, np.inf], var='V', disturb_type='packet_2d', par=[0.02, 50, 1e-5])
+    disturb = Disturbance(x_range=[25, 50], y_range=[0, 0], z_range=[-np.inf, np.inf], var='V', disturb_type='packet_2d', par=[0.02, 50, 1e-5], active=True)
     flow_type.disturb.append(disturb)
 
     # Mesh parameters
@@ -104,7 +104,7 @@ def parameters():
 
     # Time control
     time = Time(control='cfl', dt=1, max_cfl=1.3, qtimes=100, tmax=10000, nStep= 10)
-
+    logAll = 25
     # Numerical methods
     num_methods = NumericalMethods(spatial_derivs='SL6', spatial_derivs_buffer='EX4', time_stepping='RK4', neumann_order=6, neumann2_order=2, spatial_filter_strength=0.49)
 
@@ -117,4 +117,4 @@ def parameters():
         np.column_stack([tracked_x, np.ones(n_probes), np.zeros(n_probes)])
     ])
 
-    return [case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col] 
+    return [case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col, logAll] 
