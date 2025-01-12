@@ -74,9 +74,8 @@ class Preprocessing:
             if np.isinf(self.numMethods.SFD.Delta):
                 self.numMethods.SFD.Delta = -1
 
-            if self.numMethods.SFD.type > 0 and (os.path.exists(f"{self.caseName}/meanflowSFD.npy") or
-                                                 hasattr(self.flow_type, 'initial_meanFile')):
-                if not hasattr(self.numMethods.SFD, 'resume'):
+            if (self.numMethods.SFD.type > 0) and (os.path.exists(f"{self.caseName}/meanflowSFD.h5" or self.flow_type.initial_meanFile is not None)):
+                if self.numMethods.SFD.resume == None:
                     self.numMethods.SFD.resume = 1
             else:
                 self.numMethods.SFD.resume = 0
@@ -96,7 +95,7 @@ class Preprocessing:
         })
 
         # Check for previous save files, TODO: CHECK THIS GLOBALS
-        if self.runningLST == True:
+        if self.runningLST == False:
             nStep, nx, ny, nz = checkPreviousRun(self.caseName)
 
             if nStep is not None:
@@ -126,7 +125,12 @@ class Preprocessing:
 
         # SFD
         if self.numMethods.SFD.type == 2:
-            np.save(f"{self.caseName}/bin/SFD.npy", {'SFD_X': self.SFD_X})
+            # Save in format .npy
+            np.save(f"{self.caseName}/bin/SFD_X.npy", {'SFD_X': self.SFD_X})
+            # Save in format .hdf5
+            with h5py.File(f"{self.caseName}/bin/SFD_X.h5", 'w') as hdf5_file:
+                for key, value in {'SFD_X': self.SFD_X}.items():
+                    hdf5_file.create_dataset(key, data=value)
 
     def calcSFDregion(self):
         # Inicializa o SFD_X com valores de 1
@@ -358,7 +362,7 @@ class Preprocessing:
                 outFile.write(f'    integer :: SFD = {numMethods.SFD.type}\n')
                 outFile.write(f'    real*8 :: SFD_Delta = {numMethods.SFD.Delta:.20f}d0\n')
                 outFile.write(f'    real*8 :: SFD_X_val = {numMethods.SFD.X:.20f}d0\n')
-                outFile.write(f'    integer :: resumeMeanFlow = {numMethods.SFD.resume}\n\n')
+                outFile.write(f'    integer :: resumeMeanFlow = {numMethods.SFD.resume:}\n\n')
             else:
                 outFile.write('    integer :: SFD = 0\n')
                 outFile.write(f'    real*8 :: SFD_Delta = {0:.20f}d0\n')

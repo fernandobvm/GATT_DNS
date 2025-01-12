@@ -2,8 +2,10 @@ import os
 import re
 import copy
 import numpy as np
-from scipy.interpolate import interp1d, RegularGridInterpolator, PchipInterpolator, CubicSpline
+import h5py
+from scipy.interpolate import interp1d, RegularGridInterpolator, PchipInterpolator, CubicSpline, splrep, splev
 from scipy.integrate import odeint, simpson 
+
 
 ########## CLASSES
 
@@ -371,6 +373,7 @@ class MeshAxis:
         self.buffer_i = Buffer()  # Buffer for initial part
         self.buffer_f = Buffer()  # Buffer for final part
         self.n = None
+        self.file = None
 
 
 
@@ -677,7 +680,8 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
             xi = X[i]
             if xi > 0:
                 theta = 0.664 * np.sqrt(xi / Re)
-                U_interp = interp1d(ybl*theta/thetabl + Y0[i], ubl, kind='linear', fill_value='extrapolate')
+                #U_interp = interp1d(ybl*theta/thetabl + Y0[i], ubl, kind='cubic', bounds_error=False, fill_value='extrapolate')
+                U_interp = CubicSpline(ybl*theta/thetabl + Y0[i], ubl, bc_type='not-a-knot')
                 U[i, :] = U_interp(Y)
                 U[i, Y < Y0[i]] = 0
 
@@ -1096,6 +1100,10 @@ def checkPreviousRun(caseName):
         do contexto do código principal.
 
         """
+        nStep = None
+        nx = None
+        ny = None
+        nz = None
         # Lista todos os arquivos no diretório
         allFiles = os.listdir(caseName)
 
@@ -1104,7 +1112,7 @@ def checkPreviousRun(caseName):
 
         # Procura por arquivos que correspondem ao padrão 'flow_*.npy'
         for name in allFiles:
-            if len(name) == 19 and re.search(r'flow_\d*.npy', name):
+            if len(name) == 18 and re.search(r'flow_\d*.h5', name):
                 caseFiles.append(name)
 
         # Se nenhum arquivo for encontrado, retorna valores vazios
@@ -1125,9 +1133,19 @@ def checkPreviousRun(caseName):
         #    nx, ny, nz = fileObject['U'].shape
         #    return nStep, nx, ny, nz
         
-        file_path = os.path.join(caseName, f'flow_{nStep:010d}.npy')
-        fileObject = np.load(file_path, allow_pickle=True).item()
-        nx, ny, nz = fileObject.U.shape
+        file_path = os.path.join(caseName, f'flow_{nStep:010d}.h5')
+        try:
+            with h5py.File(file_path, 'r') as hdf5_file:
+                dataset_name = 'U'
+                data = hdf5_file[dataset_name][:]
+                if data.ndim == 2:
+                    (ny, nx) = data.shape
+                    nz = 1
+                else:
+                    (nz, ny, nx) = data.shape
+        except:
+            a = 0
+
 
         # Se não for necessário retornar as dimensões, apenas retorna o nStep
         return nStep, nx, ny, nz

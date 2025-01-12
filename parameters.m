@@ -13,7 +13,7 @@ yEnd = 5*delta99end;
 caseName = ['Red' num2str(Red) '-Ma' strrep(num2str(Ma),'.','') '-L' num2str(L) '-D' num2str(D)];
 
 %% Domain decomposition
-p_row = 10;
+p_row = 4;
 p_col = 1;
 
 %% Flow parameters
@@ -155,9 +155,9 @@ mesh.z.buffer.f.n = 0;
 %% Time control
 % If time.control = dt, qtimes and tmax are in number of iterations and the step size is fixed to dt
 % If time.control = cfl, qtimes and tmax are in non-dimensional time and dt defines the maximum step size
-time.control = 'cfl';
+time.control = 'dt';
 
-time.dt = 1;
+time.dt = 0.01;
 time.maxCFL = 1.3;
 
 time.qtimes = 100;

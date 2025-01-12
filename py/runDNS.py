@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import time
+import copy
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from datetime import datetime
@@ -96,13 +97,25 @@ def runDNS(extraParameters = None, caseFile = 'parameters'):
         flow = generateInitialFlow(mesh, flowParameters, flowType, p.boundary.inside_wall, flowType.name)
 
         # Salvar fluxo inicial em arquivo
-        flow_to_save = flow
+        flow_to_save = deepcopy(flow)
         flow_to_save.t = 0
-        for var in 'UVWRE':
-            setattr(flow_to_save, var, np.where(p.boundary.inside_wall, np.nan, getattr(flow_to_save, var)))
+        #for var in 'UVWRE':
+        #    setattr(flow_to_save, var, np.where(p.boundary.inside_wall, np.nan, getattr(flow_to_save, var)))
+
+        for var in ['U', 'V', 'W', 'R', 'E']:
+            current_array = getattr(flow_to_save, var)  # Obtém o atributo correspondente
+            if current_array.size > 0:  # Verifica se o array não está vazio
+                current_array[p.boundary.inside_wall.T] = np.nan
+                setattr(flow_to_save, var, current_array)  # Atualiza o atributo
 
         # Salvar fluxo inicial em formato .npy
         np.save(f'{caseName}/flow_0000000000.npy', flow_to_save)
+        with h5py.File(f'{caseName}/flow_0000000000.h5', 'w') as hdf5_file:
+            for attr in ['U', 'V', 'W', 'R', 'E', 't']:
+                data = getattr(flow_to_save, attr)
+                if isinstance(data, np.ndarray):  # Certifique-se de que é um array NumPy
+                    data = np.squeeze(data).T
+                hdf5_file.create_dataset(attr, data=data)
 
         # Verificar se há arquivo de fluxo médio
         if flowType.initial_meanFile != None:
@@ -115,13 +128,23 @@ def runDNS(extraParameters = None, caseFile = 'parameters'):
             meanFlow = generateInitialFlow(mesh, flowParameters, flowTypeTemp, p.boundary.inside_wall, flowType.name)
 
             # Salvar fluxo médio em arquivo
-            meanFlow_to_save = meanFlow
+            meanFlow_to_save = deepcopy(meanFlow)
             meanFlow_to_save.t = 0
-            for var in 'UVWRE':
-                setattr(meanFlow_to_save, var, np.where(p.boundary.inside_wall, np.nan, getattr(meanFlow_to_save, var)))
+
+            for var in ['U', 'V', 'W', 'R', 'E']:
+                current_array = getattr(meanFlow_to_save, var)  # Obtém o atributo correspondente
+                if current_array.size > 0:  # Verifica se o array não está vazio
+                    current_array[p.boundary.inside_wall.T] = np.nan
+                    setattr(meanFlow_to_save, var, current_array)  # Atualiza o atributo
+
 
             np.save(f'{caseName}/meanflowSFD.npy', meanFlow_to_save)
-
+            with h5py.File(f'{caseName}/meanflowSFD.h5', 'w') as hdf5_file:
+                for attr in ['U', 'V', 'W', 'R', 'E', 't']:
+                    data = getattr(meanFlow_to_save, attr)
+                    if isinstance(data, np.ndarray):  # Certifique-se de que é um array NumPy
+                        data = np.squeeze(data).T
+                    hdf5_file.create_dataset(attr, data=data)
     else:
         print(f'Resuming from file number {p.time.nStep}')
 
@@ -138,7 +161,7 @@ def runDNS(extraParameters = None, caseFile = 'parameters'):
                 logFile2.write(f'Parameters file was changed:\n{parametersDiff}\n')
 
     # Copiar o arquivo de parâmetros para a pasta Fortran
-    shutil.copyfile(f'{caseFile}.py', os.path.join(caseName, 'bin', 'parameters.py'))
+    #shutil.copyfile(f'{caseFile}.py', os.path.join(caseName, 'bin', 'parameters.py'))
 
     if extraParameters is not None:
         # Salvar extraParameters no formato .npy
@@ -158,18 +181,20 @@ def runDNS(extraParameters = None, caseFile = 'parameters'):
     # Chamar o código Fortran
     if runSimulation and not debugger and not profiler:
         print('Starting code')
-        start_time = time.time()
-        subprocess.call(f'cd {caseName}/bin && mpirun -np {p_row*p_col} main {caseName}', shell=True)
-        print(f'Simulation completed in {time.time() - start_time:.2f} seconds')
+        start_time = datetime.now() # time.time()
+        subprocess.call(f'cd {caseName}/bin && mpirun --allow-run-as-root -np {p_row*p_col} main {caseName}', shell=True)
+        #result = subprocess.run(f'cd {caseName}/bin && mpirun --allow-run-as-root -np {p_row*p_col} main {caseName}')
+        print(f'Simulation completed in {(datetime.now() - start_time).seconds:.2f} seconds')
+        #print(result.stdout)
     elif runSimulation and debugger:
         print('Starting code with debugger')
         subprocess.call(f'cd {caseName}/bin && mpirun -n {p_row*p_col} xterm -sl 1000000 -fg white -bg black -hold -e gdb -ex run --args ./main {caseName}', shell=True)
     elif runSimulation and profiler:
         print('Starting code with profiler')
         os.environ['GMON_OUT_PREFIX'] = 'gmon.out'
-        start_time = time.time()
+        start_time = datetime.now() # time.time()
         subprocess.call(f'cd {caseName}/bin && mpirun -np {p_row*p_col} main {caseName}', shell=True)
-        print(f'Simulation with profiler completed in {time.time() - start_time:.2f} seconds')
+        print(f'Simulation with profiler completed in {(datetime.now() - start_time).seconds:.2f} seconds')
         subprocess.call(f'cd {caseName}/bin && gprof -l main gmon.out > profile.txt', shell=True)
         shutil.move(os.path.join(caseName, 'bin', 'profile.txt'), '.')
 
@@ -224,6 +249,9 @@ def compileFortran(case_name, dir=None, decomp_dir=None, optimize_code=False, de
     # Se o diretório do Matlab não for fornecido, use o valor padrão
     if dir is None:
         dir = os.getcwd()  # Use o valor do sistema ou um default
+
+    if decomp_dir is None:
+        decomp_dir = '/usr/local/2decomp_fft'
 
     # Cria o arquivo makefile_extra
     makefile_extra_path = os.path.join(case_name, 'bin', 'makefile_extra')
