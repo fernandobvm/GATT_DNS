@@ -130,7 +130,7 @@ class Preprocessing:
             # Save in format .hdf5
             with h5py.File(f"{self.caseName}/bin/SFD_X.h5", 'w') as hdf5_file:
                 for key, value in {'SFD_X': self.SFD_X}.items():
-                    hdf5_file.create_dataset(key, data=value)
+                    hdf5_file.create_dataset(key, data=value.T)
 
     def calcSFDregion(self):
         # Inicializa o SFD_X com valores de 1

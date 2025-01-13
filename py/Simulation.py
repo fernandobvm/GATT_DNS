@@ -7,36 +7,11 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from datetime import datetime
 from source.library import *
-from parameters import *
 from source.MatricesFiles import *
 from source.BoundaryFiles import *
 from source.preprocessing import *
 
-def runDNS(extraParameters = None, caseFile = 'parameters'):
-
-    # Define se a simulação será realmente compilada e executada ou apenas o pré-processamento será feito
-    runSimulation = True
-    compileCode = True
-    plotDNSDomain = False
-
-    # Parâmetros de compilação
-    forceRecompileAll = False
-    displayCompiling = False
-    optimizeCode = True
-    debugger = False
-    profiler = False
-
-    # Configuração das pastas de bibliotecas
-    matlabDir = ''  # Deixe vazio para diretório automático
-    decompDir = '/usr/local/2decomp_fft'
-
-    # Registro de dados
-    logAll = False  # Salvar todas as iterações no log ou apenas quando um fluxo é salvo
-
-    # Executa o arquivo de parâmetros
-    #eval(caseFile)
-    if caseFile == 'parameters':
-        [caseName, flowParameters, domain, flowType, mesh, time, numMethods, p_row, p_col, logAll] = parameters()
+def runDNS(caseName, flowParameters, domain, flowType, mesh, time, numMethods, p_row, p_col, caseFile, logAll = False, runSimulation = True, compileCode = True, plotDNSDomain = False, forceRecompileAll = False, displayCompiling = False, optimizeCode = True, debugger = False, profiler = False, matlabDir = '', decompDir = '/usr/local/2decomp_fft', extraParameters = None):
 
     if extraParameters is not None:
         # Descompacta extraParameters e define variáveis adicionais
@@ -170,7 +145,7 @@ def runDNS(extraParameters = None, caseFile = 'parameters'):
     # Compilar o código Fortran se necessário
     if compileCode:
         print('Compiling code')
-        compileFortran(caseName)  # Assumindo que compileFortran está definido em outro lugar
+        compileFortran(caseName, matlabDir=matlabDir, decompDir=decompDir, optimizeCode=optimizeCode, debugger=debugger, profiler=profiler, displayCompiling=displayCompiling)  # Assumindo que compileFortran está definido em outro lugar
 
     # Plotar o domínio se necessário
     if plotDNSDomain:
@@ -216,7 +191,7 @@ def runDNS(extraParameters = None, caseFile = 'parameters'):
         for varName in dir():
             info[varName] = eval(varName)
 
-    return flowHandles, info
+    
 
 def unpackStruct(structure):
     varList = []
@@ -233,34 +208,31 @@ def unpackStruct(structure):
     unpack(structure)
     return varList
 
-def compileFortran(case_name, dir=None, decomp_dir=None, optimize_code=False, debugger=False, profiler=False, display_compiling=True):
+def compileFortran(case_name, matlabDir=None, decompDir='/usr/local/2decomp_fft', optimizeCode=False, debugger=False, profiler=False, displayCompiling=True):
     """
     Compila arquivos Fortran de acordo com as opções fornecidas.
     
     Args:
         case_name (str): Nome do caso/pasta onde o makefile será gerado.
-        dir (str): Diretório do Matlab. Se None, usa o valor padrão.
-        decomp_dir (str): Diretório de decomposição.
-        optimize_code (bool): Se True, ativa otimizações de código.
+        matlabDir (str): Diretório do Matlab. Se None, usa o valor padrão.
+        decompDir (str): Diretório de decomposição.
+        optimizeCode (bool): Se True, ativa otimizações de código.
         debugger (bool): Se True, ativa opções de depuração.
         profiler (bool): Se True, ativa opções de profiling.
-        display_compiling (bool): Se False, suprime a saída de compilação.
+        displayCompiling (bool): Se False, suprime a saída de compilação.
     """
     # Se o diretório do Matlab não for fornecido, use o valor padrão
-    if dir is None:
-        dir = os.getcwd()  # Use o valor do sistema ou um default
-
-    if decomp_dir is None:
-        decomp_dir = '/usr/local/2decomp_fft'
+    if matlabDir is None:
+        matlabDir = os.getcwd()  # Use o valor do sistema ou um default
 
     # Cria o arquivo makefile_extra
     makefile_extra_path = os.path.join(case_name, 'bin', 'makefile_extra')
     with open(makefile_extra_path, 'w') as out_file:
-        out_file.write(f'MATROOT = {dir}\n')
-        out_file.write(f'DECOMPDIR = {decomp_dir}\n')
+        out_file.write(f'MATROOT = {matlabDir}\n')
+        out_file.write(f'DECOMPDIR = {decompDir}\n')
 
         # Adiciona as opções de otimização ou depuração
-        if optimize_code and not debugger:
+        if optimizeCode and not debugger:
             out_file.write('ARGS += -O5 -fcheck=all -fno-finite-math-only -march=native\n')
         
         if debugger:
@@ -269,7 +241,7 @@ def compileFortran(case_name, dir=None, decomp_dir=None, optimize_code=False, de
             out_file.write('ARGS += -g -pg\n')
 
     # Verifica se deve suprimir a saída da compilação
-    supress_output = '' if display_compiling else ' >/dev/null'
+    supress_output = '' if displayCompiling else ' >/dev/null'
 
     # Remove o arquivo binário main se ele já existir, para forçar a recompilação
     main_binary_path = os.path.join(case_name, 'bin', 'main')
