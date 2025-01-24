@@ -94,6 +94,8 @@ class Preprocessing:
             'flow_type': self.flow_type
         })
 
+        np.savez(f"{self.caseName}/mesh.npz", X = self.mesh.X, Y = self.mesh.Y, Z = self.mesh.Z, wall = self.boundary.inside_wall, flow_parameters = self.flow_parameters, flow_type = self.flow_type)
+
         # Check for previous save files, TODO: CHECK THIS GLOBALS
         if self.runningLST == False:
             nStep, nx, ny, nz = checkPreviousRun(self.caseName)

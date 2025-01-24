@@ -5,6 +5,7 @@ import numpy as np
 import h5py
 from scipy.interpolate import interp1d, RegularGridInterpolator, PchipInterpolator, CubicSpline, splrep, splev
 from scipy.integrate import odeint, simpson 
+from scipy.io import loadmat
 
 
 ########## CLASSES
@@ -15,7 +16,7 @@ class Mesh:
         self.y = MeshAxis()
         self.z = MeshAxis()
         self.tracked_points = []
-        self.tracked_norm = True
+        self.tracked_norm = False
         self.fit_tracked_points = False
         self.nx = 0  # number of grid points in x
         self.ny = 0  # number of grid points in y
@@ -23,6 +24,7 @@ class Mesh:
         self.X = 0    # X coordinates of the mesh
         self.Y = 0    # Y coordinates of the mesh
         self.Z = 0    # Z coordinates of the mesh
+        self.fileCalcBuffer = False
 
     def generateMesh(self, domain):
         #TODO: implementar este método, ele é utilizado no preprocessing.m
@@ -218,17 +220,27 @@ class Mesh:
 
         
         elif mesh_dir.type == 'file':
-            X = np.load(mesh_dir.file)  # Load .npy file directly
+            possible_keys = ["X", "Y", "Z"]
+            if mesh_dir.file.lower().endswith('.npy'):
+                X = np.load(mesh_dir.file)  # Load .npy file directly
             
-            if len(X.shape) == 1:
-                X = X.reshape(1, -1)  # Ensure correct shape
+                if len(X.shape) == 1:
+                    X = X.reshape(1, -1)  # Ensure correct shape
+                
+            elif mesh_dir.file.lower().endswith('.h5'):
+                with h5py.File(mesh_dir.file,'r') as file:
+                    X = next((file[key][()] for key in possible_keys if key in file), None).T
+            elif mesh_dir.file.lower().endswith('.mat'):
+                data = loadmat(mesh_dir.file)
+                X = next((data[key] for key in possible_keys if key in data), None)
+            else:
+                print("Mesh format not supported. Please provide a .npy, .mat or .h5 file.")
             
             # Check if file has the correct number of nodes
             if not hasattr(mesh_dir, 'fileCalcBuffer') or not mesh_dir.fileCalcBuffer:
                 if X.shape[1] != mesh_dir.n:
                     raise ValueError(f"{mesh_dir.direction} mesh from file {mesh_dir.file} contains {X.shape[1]} nodes instead of {mesh_dir.n} as specified in parameters")
             XPhysical = X.flatten()
-        
         return XPhysical
 
     def _adjust_buffer_zone(self, zone, target, d_base):
@@ -428,10 +440,10 @@ class NumericalMethods:
 
 
 class SFD:
-    def __init__(self, sfd_type=2, X=0.05, Delta=10, applyY=False):
+    def __init__(self, type=2, X=0.05, Delta=10, applyY=False):
         self.X = X
         self.Delta = Delta
-        self.type = sfd_type
+        self.type = type
         self.applyY = applyY
         self.extra_region = []
         self.resume = None
@@ -682,6 +694,7 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
                 theta = 0.664 * np.sqrt(xi / Re)
                 #U_interp = interp1d(ybl*theta/thetabl + Y0[i], ubl, kind='cubic', bounds_error=False, fill_value='extrapolate')
                 U_interp = CubicSpline(ybl*theta/thetabl + Y0[i], ubl, bc_type='not-a-knot')
+                #U_interp = CubicSpline(ybl*theta/thetabl + Y0[i], ubl, bc_type='natural')
                 U[i, :] = U_interp(Y)
                 U[i, Y < Y0[i]] = 0
 

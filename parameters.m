@@ -161,7 +161,7 @@ time.dt = 0.01;
 time.maxCFL = 1.3;
 
 time.qtimes = 100;
-time.tmax = 10000;
+time.tmax = 10;
 
 logAll = 25;
 

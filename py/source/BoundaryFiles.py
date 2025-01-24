@@ -574,8 +574,8 @@ class BoundaryConditions:
                 case 5:
                     currentWall = self.wall.left
             for j in range(0, currentWall.shape[0]):
-                self.inside_wall[currentWall[j,0]:currentWall[j,1], currentWall[j,2]:currentWall[j,3], currentWall[j,4]:currentWall[j,5]] = False
-
+                #self.inside_wall[currentWall[j,0]:currentWall[j,1]+1, currentWall[j,2]:currentWall[j,3]+1, currentWall[j,4]:currentWall[j,5]+1] = False
+                self.inside_wall[currentWall[j,4]:currentWall[j,5]+1, currentWall[j,2]:currentWall[j,3]+1, currentWall[j,0]:currentWall[j,1]+1] = False
         
         # Neumann condition coefficients
         self.get_neumann_coeffs(neumann_order)   

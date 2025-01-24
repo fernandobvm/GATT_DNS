@@ -857,6 +857,11 @@ class Matrices:
                 LHS_temp[ind_start:ind_start + mLHS, :] = 0
                 RHS_temp[ind_start:ind_start + mRHS, :] = 0
 
+                #if decenteredStencilLHS.ndim == 1:
+                #    decenteredStencilLHS = decenteredStencilLHS[:,None]
+                #if decenteredStencilRHS.ndim == 1:
+                #    decenteredStencilRHS = decenteredStencilRHS[:,None]
+
                 LHS_temp[ind_start:ind_start + mLHS, ind_start:ind_start + nLHS] = decenteredStencilLHS
                 RHS_temp[ind_start:ind_start + mRHS, ind_start:ind_start + nRHS] = decenteredStencilRHS
 

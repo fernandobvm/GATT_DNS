@@ -44,9 +44,15 @@ flow_type.disturb.append(disturb)
 # Mesh parameters
 mesh = Mesh()
 mesh.x.d0 = 4
+#mesh.x.n = 925
 mesh.y.d0 = 1
 mesh.z.n = 1
 
+#mesh.x.type = 'file'
+#mesh.x.file = "D:\\documents\\usp\\masters\\research\\dns_code\\GATT_DNS\\py\\meshes\\meshX_Re950_npts925_dxMin01.mat"
+#mesh.x.file = "D:\\documents\\usp\\masters\\research\\dns_code\\GATT_DNS\\py\\meshes\\mx.h5"
+#mesh.x.file = "/home/dns/meshes/mx.h5"
+#mesh.x.file = "/home/dns/meshes/meshX_Re950_npts925_dxMin01.mat"
 mesh.x.type = 'attractors'
 x1 = flow_type.cav[0].x[0]
 x2 = flow_type.cav[0].x[1]
@@ -110,7 +116,7 @@ mesh.z.buffer_f.n = 0
 
 
 # Time control
-time = Time(control='dt', dt=0.01, max_cfl=1.3, qtimes=100, tmax=10000, nStep= 10)
+time = Time(control='dt', dt=0.01, max_cfl=1.3, qtimes=100, tmax=10, nStep= 10)
 logAll = 25
 # Numerical methods
 num_methods = NumericalMethods(spatial_derivs='SL6', spatial_derivs_buffer='EX4', time_stepping='RK4', neumann_order=6, neumann2_order=2, spatial_filter_strength=0.49)
@@ -123,7 +129,7 @@ mesh.tracked_points = np.vstack([
     [(x1 + 3 * x2) / 4, 0, 0], 
     np.column_stack([tracked_x, np.ones(n_probes), np.zeros(n_probes)])
 ])
-
+mesh.tracked_norm = True
 
 caseFile = os.path.basename(__file__)
 runDNS(case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col, caseFile, logAll)
