@@ -6,7 +6,7 @@ function [flowHandles, info] = runDNS(caseFile, extraParameters) %#ok<*STOUT>
 
 %% Define case file
 if nargin == 0
-    caseFile = 'parameters';
+    caseFile = 'parameters'; %'parameters_baseflow_gap_Re950_M01_h10_LR18'; 
 end
 
 %% Define if simulation will actually be compiled and run or if just the preprocessing will be done

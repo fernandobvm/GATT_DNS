@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from scipy.sparse import diags, dia_matrix, isspmatrix, isspmatrix_dia, issparse, lil_matrix, csr_matrix
+from scipy.sparse import diags, dia_matrix, isspmatrix, isspmatrix_dia, issparse, lil_matrix, csr_matrix, csc_matrix
 from scipy.sparse.linalg import spsolve
 from source.library import *
 
@@ -55,21 +55,21 @@ class Matrices:
         N = matrix.LHS[0].shape[0]
 
         # Prepare LHS
-        A = np.zeros((N - 1, nTypes))
-        B = np.zeros((N, nTypes))
-        C = np.zeros((N - 1, nTypes))
-        D = np.zeros((N, nTypes))
+        A = np.zeros((N - 1, nTypes), dtype=np.float128)
+        B = np.zeros((N, nTypes), dtype=np.float128)
+        C = np.zeros((N - 1, nTypes), dtype=np.float128)
+        D = np.zeros((N, nTypes), dtype=np.float128)
 
-        A1 = np.zeros((1, nTypes))
-        Cn = np.zeros((1, nTypes))
+        A1 = np.zeros((1, nTypes), dtype=np.float128)
+        Cn = np.zeros((1, nTypes), dtype=np.float128)
 
-        Af = np.zeros((N - 1, nTypes))
-        Bf = np.zeros((N, nTypes))
-        Cf = np.zeros((N - 1, nTypes))
-        Df = np.zeros((N, nTypes))
+        Af = np.zeros((N - 1, nTypes), dtype=np.float128)
+        Bf = np.zeros((N, nTypes), dtype=np.float128)
+        Cf = np.zeros((N - 1, nTypes), dtype=np.float128)
+        Df = np.zeros((N, nTypes), dtype=np.float128)
 
-        A1f = np.zeros((1, nTypes))
-        Cnf = np.zeros((1, nTypes))
+        A1f = np.zeros((1, nTypes), dtype=np.float128)
+        Cnf = np.zeros((1, nTypes), dtype=np.float128)
 
         for i in range(nTypes):
             A[:, i] = matrix.LHS[i].diagonal(k=-1)
@@ -136,7 +136,7 @@ class Matrices:
 
 
         done = False
-        RHSTemp = np.zeros((N, N, nTypes))
+        RHSTemp = np.zeros((N, N, nTypes), dtype=np.float128)
 
         for i in range(nTypes):
             RHSTemp[:, :, i] = matrix.RHS[i].todense()
@@ -155,7 +155,7 @@ class Matrices:
                 done = True
 
         done = False
-        RHSTemp = np.zeros((N, N, nTypes))
+        RHSTemp = np.zeros((N, N, nTypes), dtype=np.float128)
 
         for i in range(nTypes):
             RHSTemp[:, :, i] = matrix.fRHS[i].todense()
@@ -193,7 +193,7 @@ class Matrices:
         # Prepare RHS
 
     def fullDiag(self, M, k):
-        D = np.zeros((M.shape[0], 1, M.shape[2]))
+        D = np.zeros((M.shape[0], 1, M.shape[2]), dtype=np.float128)
         for i in range(M.shape[2]):
             D[:, 0, i] = np.diag(np.roll(M[:, :, i], shift=-k, axis=1))
         return D
@@ -816,21 +816,21 @@ class Matrices:
             inds = np.ravel_multi_index((col_indices, row_indices), (n, n))
 
             LHS_base.flat[inds] = centeredStencilLHS[i]
-            
+
 
         for i in range(1, len(centeredStencilRHS)):
             row_indices = np.arange(0,n)
             col_indices = np.mod(row_indices + i, n)
-            inds = np.ravel_multi_index((col_indices, row_indices), (n, n))
-
-            RHS_base.flat[inds] = centeredStencilRHS[i]
+            # inds = np.ravel_multi_index((col_indices, row_indices), (n, n))
+            # RHS_base.flat[inds] = centeredStencilRHS[i]
+            RHS_base[row_indices, col_indices] = centeredStencilRHS[i]
 
             row_indices = np.arange(0,n)
             col_indices = np.mod(row_indices - i, n)
-            inds = np.ravel_multi_index((col_indices, row_indices), (n, n))
-
-            RHS_base.flat[inds] = invertStencil*centeredStencilRHS[i]
-
+            # inds = np.ravel_multi_index((col_indices, row_indices), (n, n))
+            # RHS_base.flat[inds] = invertStencil*centeredStencilRHS[i]
+            RHS_base[row_indices, col_indices] = invertStencil*centeredStencilRHS[i]
+            
         # Check if this is a buffer zone that needs to be upwind
         # and add that to the list of starts and ends so that the decentered stencil is used
         if bufferInfo is not None:
@@ -841,8 +841,9 @@ class Matrices:
                 for i in range(nTypes):
                     derivEnds[i] = sorted(set(derivEnds[i] + list(range(n - bufferInfo.buffer_f.n + 1, n + 1))))
 
-        LHS_base = LHS_base.T
-        RHS_base = RHS_base.T
+        # Não precisa mais por conta da correção acima usando RHS_base[row_indices, col_indices]...
+        # LHS_base = LHS_base.T  # Não sei pq, mas para ficar igual ao do matlab precisa dessa transposição.
+        # RHS_base = RHS_base.T  # Não sei pq, mas para ficar igual ao do matlab precisa dessa transposição.
         
         # Add startings and endings
         
@@ -857,9 +858,9 @@ class Matrices:
                 LHS_temp[ind_start:ind_start + mLHS, :] = 0
                 RHS_temp[ind_start:ind_start + mRHS, :] = 0
 
-                #if decenteredStencilLHS.ndim == 1:
+                # if decenteredStencilLHS.ndim == 1:
                 #    decenteredStencilLHS = decenteredStencilLHS[:,None]
-                #if decenteredStencilRHS.ndim == 1:
+                # if decenteredStencilRHS.ndim == 1:
                 #    decenteredStencilRHS = decenteredStencilRHS[:,None]
 
                 LHS_temp[ind_start:ind_start + mLHS, ind_start:ind_start + nLHS] = decenteredStencilLHS
@@ -869,17 +870,15 @@ class Matrices:
                 LHS_temp[ind_end - mLHS + 1:ind_end + 1, :] = 0
                 RHS_temp[ind_end - mRHS + 1:ind_end + 1, :] = 0
 
-                
-
                 LHS_temp[ind_end - mLHS + 1:ind_end + 1, ind_end - nLHS + 1:ind_end + 1] = safe_flip(decenteredStencilLHS)
                 RHS_temp[ind_end - mRHS + 1:ind_end + 1, ind_end - nRHS + 1:ind_end + 1] = invertStencil * safe_flip(decenteredStencilRHS)
 
             #LHS[i] = diags(LHS_temp.diagonal())
             #RHS[i] = diags(RHS_temp.diagonal())
 
-            LHS[i] = csr_matrix(LHS_temp)
-            RHS[i] = csr_matrix(RHS_temp)
-
+            # Aqui foi preciso usar csc_matrix no lugar de csr_matrix para ficar igual ao matlab!
+            LHS[i] = csc_matrix(LHS_temp) # csr_matrix(LHS_temp)
+            RHS[i] = csc_matrix(RHS_temp) # csr_matrix(RHS_temp)
 
         return LHS, RHS
     
@@ -890,6 +889,8 @@ class Matrices:
         # Handling transitions
         nti = round(bufferInfo.buffer_i.transition * ni) if hasattr(bufferInfo.buffer_i, 'transition') else ni
         ntf = round(bufferInfo.buffer_f.transition * nf) if hasattr(bufferInfo.buffer_f, 'transition') else nf
+        # PERIGO: Dentro da classe tinha um valor default para transition, então a ausência dele no arquivo de parâmetros
+        # produz resultados diferentes entre o matlab e python!
 
         ni1 = ni - nti
         ni2 = ni - 1
@@ -897,7 +898,7 @@ class Matrices:
         nf2 = nf1 + ntf - 1
 
         # The buffer zone can be computed by a different type of derivatives. The transition is done smoothly.
-        eta = np.ones(n)
+        eta = np.ones(n, dtype=np.float128)
 
         if ni > 0:
             eta[:ni1] = 0
@@ -912,8 +913,8 @@ class Matrices:
 
         eta = np.sqrt(eta)
 
-        eta = eta.T
-        eta = eta[:, np.newaxis]
+        eta = eta.T                 # Não vi nada no matlab sobre isso, mas sem isso a precisão diminui em relação ao matlab..
+        eta = eta[:, np.newaxis]    # Não vi nada no matlab sobre isso, mas sem isso a precisão diminui em relação ao matlab..
 
         # Para cada tipo de derivada, realizar a operação nas matrizes esparsas
         for baseL, bufferL, baseR, bufferR in zip(baseMatrixL, bufferMatrixL, baseMatrixR, bufferMatrixR):
@@ -929,8 +930,9 @@ class Matrices:
                 resultR = eta * baseR + (1 - eta) * bufferR
 
             # Converter diretamente para DIA com corretos offsets
-            dia_resultL = diags(resultL.diagonal(), offsets=0, shape=resultL.shape, format='dia')
-            dia_resultR = diags(resultR.diagonal(), offsets=0, shape=resultR.shape, format='dia')
+            # dia_resultL = diags(resultL.diagonal(), offsets=0, shape=resultL.shape, format='dia')
+            # dia_resultR = diags(resultR.diagonal(), offsets=0, shape=resultR.shape, format='dia')
+            # Comentei aqui em cima por que não estava em uso e estava gerando um problema após minha alteração para usar csc_matrix.
 
             #newMatrixL.append(dia_resultL)
             #newMatrixR.append(dia_resultR)
@@ -954,7 +956,7 @@ class Matrices:
         nf2 = nf1 + ntf
 
         # Buffer zone computation, with smooth transition
-        eta = np.ones(n)
+        eta = np.ones(n, dtype=np.float128)
 
         if ni > 0:
             eta[:ni1] = 0
@@ -1163,6 +1165,9 @@ class Matrices:
         return blocks
     
 def safe_flip(array):
+    arr = np.array(array) if not isinstance(array, int) else np.array([array]) 
+    return arr[::-1, ::-1] if arr.ndim > 1 else arr[::-1]
+
     if isinstance(array, int):  # Verifica se o array é um valor inteiro
         return np.array([array])  # Converte o inteiro para um array 2D com um único valor
     elif isinstance(array, list):  # Verifica se o array é uma lista
@@ -1173,10 +1178,10 @@ def safe_flip(array):
         return np.flip(array, axis=(0, 1))  # Aplica o flip normalmente
     
 def to_numpy_vector(value):
-            if np.isscalar(value):
-                return np.array([value])
-            else:
-                return np.array(value)
+    if np.isscalar(value):
+        return np.array([value])
+    else:
+        return np.array(value)
             
 #TODO: Verificar a otimização disso
 def sparse_operation_direct(eta, baseMatrixL, bufferMatrixL, i):
@@ -1187,7 +1192,7 @@ def sparse_operation_direct(eta, baseMatrixL, bufferMatrixL, i):
     num_diags = baseMatrix_sparse.data.shape[0]  # Número de diagonais
     
     # Criar uma nova matriz para armazenar as diagonais resultantes
-    result_data = np.zeros_like(baseMatrix_sparse.data)
+    result_data = np.zeros_like(baseMatrix_sparse.data, dtype=np.float128)
     
     # Loop sobre as diagonais
     for d in range(num_diags):
@@ -1208,10 +1213,11 @@ def ensure_iterable(var):
     return var
 
 def get_array_dimensions(array):
-            shape = np.shape(array)  # Obtém as dimensões do array
-            if len(shape) == 0:  # Caso seja um número único
-                return 1, 1
-            elif len(shape) == 1:  # Caso seja um vetor de 1D
-                return shape[0], 1
-            else:
-                return shape
+    shape = np.shape(array)  # Obtém as dimensões do array
+    if len(shape) == 0:  # Caso seja um número único
+        return 1, 1
+    elif len(shape) == 1:  # Caso seja um vetor de 1D
+        # return shape[0], 1
+        return 1, shape[0] # Inverti aqui, mas é perigoso, o ideal deve ser mexer na origem para nunca trabalhar com (x,).
+    else:
+        return shape

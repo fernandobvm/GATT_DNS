@@ -198,6 +198,7 @@ class Mesh:
             eta[-1] = mesh_dir.n
             
             # Interpolate to find physical nodes
+            print('interpolate 1')
             #XPhysical = interp1d(eta, xBase, kind='spline')(np.arange(1, mesh_dir.n + 1))
             XPhysical = CubicSpline(eta, xBase)(np.arange(1, mesh_dir.n + 1))
         
@@ -215,6 +216,7 @@ class Mesh:
             eta[-1] = mesh_dir.n
             
             # Interpolate to find physical nodes
+            print('interpolate 2')            
             #XPhysical = interp1d(eta, xBase, kind='spline')(np.arange(1, mesh_dir.n + 1))
             XPhysical = CubicSpline(eta, xBase)(np.arange(1, mesh_dir.n + 1))
 
@@ -289,11 +291,15 @@ class Mesh:
             duplicates = np.where(np.diff(closest_nodes) == 0)[0]
             iter_count += 1
 
+        print('interpolate 3')
         if mesh_dir.match_fixed == 2:
+            print('interpolate 3.1')
             X_physical -= PchipInterpolator(closest_nodes, X_physical[closest_nodes] - fix_points)(np.arange(mesh_dir.n))
         else:
+            print('interpolate 3.2')
             #X_physical -= interp1d(closest_nodes, X_physical[closest_nodes] - fix_points, kind='spline')(np.arange(mesh_dir.n))
-            X_physical -= CubicSpline(closest_nodes, X_physical[closest_nodes] - fix_points)(np.arange(mesh_dir.n))
+            # X_physical -= CubicSpline(closest_nodes, X_physical[closest_nodes] - fix_points)(np.arange(mesh_dir.n))
+            X_physical -= CubicSpline(closest_nodes, X_physical[closest_nodes] - fix_points, bc_type='not-a-knot')(np.arange(mesh_dir.n))
 
         X_physical[closest_nodes] = fix_points
         return X_physical
@@ -522,6 +528,7 @@ class FlowType:
         self.flowRegime = flowRegime  # Regime of the flow (laminar, turbulent, etc.)
         
 class Buffer:
+    # TODO: Conferir esse valor 0.2 para transition, talvez devesse ser None.
     def __init__(self, n=0, buffer_type='sigmoid', stretching=0, transition=0.2, ramp=None, bufferSize = None, bufferType = None):
         self.n = n
         self.type = buffer_type
@@ -688,13 +695,14 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
                 if Y0[i+1] - Y0[i] > dx * initialFlow.initial_blasiusFit:
                     Y0[i] = Y0[i+1] - dx * initialFlow.initial_blasiusFit
 
+        print('interpolate 4')
         for i in range(nx):
             xi = X[i]
             if xi > 0:
                 theta = 0.664 * np.sqrt(xi / Re)
-                #U_interp = interp1d(ybl*theta/thetabl + Y0[i], ubl, kind='cubic', bounds_error=False, fill_value='extrapolate')
+                # U_interp = interp1d(ybl*theta/thetabl + Y0[i], ubl, kind='cubic', bounds_error=False, fill_value='extrapolate')
                 U_interp = CubicSpline(ybl*theta/thetabl + Y0[i], ubl, bc_type='not-a-knot')
-                #U_interp = CubicSpline(ybl*theta/thetabl + Y0[i], ubl, bc_type='natural')
+                # U(i,:) =     interp1(ybl*theta/thetabl + Y0(i), ubl, Y(1:end), 'spline')';
                 U[i, :] = U_interp(Y)
                 U[i, Y < Y0[i]] = 0
 
@@ -887,6 +895,7 @@ def calcCompressibleBL(flowParameters, adiabWall, mesh):
     indX = np.where(X > 0)[0]
     indY = np.where(Y >= 0)[0]
 
+    print('interpolate 5')
     for ix in indX:
         y_xL = y_xR * np.sqrt(X[ix] / xR)
 

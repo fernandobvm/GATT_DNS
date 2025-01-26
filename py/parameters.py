@@ -34,7 +34,7 @@ domain = Domain(xi=0, xf=x_end, yi=-D, yf=y_end, zi=0, zf=1)
 cav1 = Cavity([x1, x2], [-D, 0], [-np.inf, np.inf])
 
 # Disturbance parameters
-disturb = Disturbance(x_range=[25, 50], y_range=[0, 0], z_range=[-np.inf, np.inf], var='V', disturb_type='packet_2d', par=[0.02, 50, 1e-5], active=True)
+disturb = Disturbance(x_range=[25, 50], y_range=[0, 0], z_range=[-np.inf, np.inf], var='V', disturb_type='packet_2d', par=[0.02, 50, 1e-5], active=False)
 
 # Flow type - #TODO: blasiusFit,flowFile e meshFile
 flow_type = FlowType()
@@ -132,19 +132,19 @@ mesh.tracked_points = np.vstack([
 mesh.tracked_norm = True
 
 caseFile = os.path.basename(__file__)
-runDNS(case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col, caseFile, logAll)
+# runDNS(case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col, caseFile, logAll)
 
 ## other simulation options
-runSimulation = True
-compileCode = True
-plotDNSDomain = False
-forceRecompileAll = False
-displayCompiling = False
-optimizeCode = True
-debugger = False
-profiler = False
-matlabDir = ''
-decompDir = '/usr/local/2decomp_fft'
-extraParameters = None
-#runDNS(case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col, caseFile, logAll, runSimulation, compileCode, plotDNSDomain, forceRecompileAll, displayCompiling, optimizeCode, debugger, profiler, matlabDir, decompDir, extraParameters)
+# runSimulation = True
+# compileCode = True
+# plotDNSDomain = False
+# forceRecompileAll = False
+# displayCompiling = False
+# optimizeCode = True
+# debugger = False
+# profiler = False
+# matlabDir = ''
+# decompDir = '/usr/local/2decomp_fft'
+# extraParameters = None
+# #runDNS(case_name, flow_params, domain, flow_type, mesh, time, num_methods, p_row, p_col, caseFile, logAll, runSimulation, compileCode, plotDNSDomain, forceRecompileAll, displayCompiling, optimizeCode, debugger, profiler, matlabDir, decompDir, extraParameters)
 

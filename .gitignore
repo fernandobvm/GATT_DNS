@@ -18,3 +18,4 @@
 /py/__pycache__
 /py/source/__pycache__
 *.asv
+/py/meshes

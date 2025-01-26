@@ -59,7 +59,7 @@ flowType.disturb{1}.var = 'V';
 flowType.disturb{1}.type = 'packet_2d';
 flowType.disturb{1}.extraNodes = [0 0 0 0 0 0];
 flowType.disturb{1}.par = [0.02, 50, 1e-5]; %omega,nmodes,amplitude
-flowType.disturb{1}.active = true;
+flowType.disturb{1}.active = false;
 flowType.disturb{1}.fitPoints = false;
 
 %% Mesh parameters

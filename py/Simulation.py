@@ -157,6 +157,7 @@ def runDNS(caseName, flowParameters, domain, flowType, mesh, time, numMethods, p
     if runSimulation and not debugger and not profiler:
         print('Starting code')
         start_time = datetime.now() # time.time()
+        print(f'Command: cd {caseName}/bin && mpirun --allow-run-as-root -np {p_row*p_col} main {caseName}')
         subprocess.call(f'cd {caseName}/bin && mpirun --allow-run-as-root -np {p_row*p_col} main {caseName}', shell=True)
         #result = subprocess.run(f'cd {caseName}/bin && mpirun --allow-run-as-root -np {p_row*p_col} main {caseName}')
         print(f'Simulation completed in {(datetime.now() - start_time).seconds:.2f} seconds')
@@ -250,6 +251,7 @@ def compileFortran(case_name, matlabDir=None, decompDir='/usr/local/2decomp_fft'
 
     # Executa o comando make
     command = f'cd {os.path.join(case_name, "bin")} && make --makefile=../../source/Fortran/makefile {supress_output}'
+    print(f'Command: {command}')
     status = os.system(command)
 
     # Verifica se a compilação foi bem-sucedida
