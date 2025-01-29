@@ -176,7 +176,12 @@ class Mesh:
                         if np.isinf(nodePositions[2]):
                             nodePositions[2:4] = [xf + 1, xf + 2]
                         nodePositions = np.array([nodePositions[0] - 1] + list(nodePositions) + [nodePositions[3] + 1])
-                        interp = PchipInterpolator(nodePositions, [0, 0, 1, 1, 0, 0])
+                        # Sorting nodePositions vector because Matlab does it automatically
+                        values = np.array([0, 0, 1, 1, 0, 0])
+                        sorted_indices = np.argsort(nodePositions)
+                        values_sorted = values[sorted_indices]
+                        nodePositions_sorted = nodePositions[sorted_indices]
+                        interp = PchipInterpolator(nodePositions_sorted, values_sorted)
 
                         eta += mesh_dir.attractor_regions[4] * interp(xBase) ** 2
                 else:                    
@@ -189,7 +194,12 @@ class Mesh:
                             nodePositions[2:4] = [xf + 1, xf + 2]
                     
                         nodePositions = np.array([nodePositions[0] - 1] + list(nodePositions) + [nodePositions[3] + 1])
-                        interp = PchipInterpolator(nodePositions, [0, 0, 1, 1, 0, 0])
+                        # Sorting nodePositions vector because Matlab does it automatically
+                        values = np.array([0, 0, 1, 1, 0, 0])
+                        sorted_indices = np.argsort(nodePositions)
+                        values_sorted = values[sorted_indices]
+                        nodePositions_sorted = nodePositions[sorted_indices]
+                        interp = PchipInterpolator(nodePositions_sorted, values_sorted)
                         eta += mesh_dir.attractor_regions[i, 4] * interp(xBase) ** 2
             
             eta = np.cumsum(eta)
@@ -508,6 +518,12 @@ class Cavity:
         self.cavityWidth = cavityWidth  # Width of the cavity
         self.cavityLocation = cavityLocation  # Location of the cavity in the domain
 
+class Rugosity:
+    def __init__(self, x_range, y_range, z_range):
+        self.x = x_range
+        self.y = y_range
+        self.z = z_range
+
 class FlowType:
     def __init__(self, flowCondition = None, flowRegime = None):
         self.name = 'boundaryLayerIsothermal'
@@ -523,6 +539,7 @@ class FlowType:
         self.initial_noiseCenter = None
         self.initial_noiseSigma = None
         self.cav = []
+        self.rug = []
         self.disturb = []
         self.flowCondition = flowCondition  # Condition of the flow (e.g., subsonic, supersonic)
         self.flowRegime = flowRegime  # Regime of the flow (laminar, turbulent, etc.)
@@ -718,20 +735,25 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
         U, V, W, E, R = compressibleBL_flow.U, compressibleBL_flow.V, compressibleBL_flow.W, compressibleBL_flow.E, compressibleBL_flow.R
 
     elif initialFlow.initial_type == 'file':
-        if initialFlow.flowFile.endswith('/'):
-            nStep = checkPreviousRun(initialFlow.flowFile[:-1])  # Assumindo que checkPreviousRun já está definido
+        if initialFlow.initial_flowFile.endswith('/'):
+            nStep = checkPreviousRun(initialFlow.initial_flowFile[:-1])  # Assumindo que checkPreviousRun já está definido
             if nStep is not None:
                 initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}flow_{nStep:010d}.npy"
             else:
                 initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}baseflow.npy"
 
-        flowFile = np.load(initialFlow.initial_flowFile, allow_pickle=True).item()  # Assumindo que flowFile contém um dicionário
+        # TODO: Verificar se tem de tratar múltiplos tipos de arquivos aqui.
+        with h5py.File(initialFlow.initial_flowFile,'r') as file:
+            flowFile = {key: file[key][()] for key in file.keys() if key in file}
+        # flowFile = np.load(initialFlow.initial_flowFile, allow_pickle=True).item()  # Assumindo que flowFile contém um dicionário
 
         if initialFlow.initial_meshFile != None:
             if initialFlow.initial_meshFile.endswith('/'):
                 initialFlow.initial_meshFile = f"{initialFlow.initial_meshFile}mesh.npy"
 
-            meshFile = np.load(initialFlow.initial_meshFile, allow_pickle=True).item()
+            # TODO: Verificar se tem de tratar múltiplos tipos de arquivos aqui.
+            meshFile = loadmat(initialFlow.initial_meshFile)
+            # meshFile = np.load(initialFlow.initial_meshFile, allow_pickle=True).item()
             Xfile, Yfile, Zfile = meshFile['X'], meshFile['Y'], meshFile['Z']
 
             Ufile, Vfile, Wfile, Rfile, Efile = flowFile['U'], flowFile['V'], flowFile['W'], flowFile['R'], flowFile['E']
@@ -744,22 +766,22 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
 
             Xmesh, Ymesh, Zmesh = np.meshgrid(X, Y, Z, indexing='ij')
 
-            Xmesh = np.clip(Xmesh, Xfile[0], Xfile[-1])
-            Ymesh = np.clip(Ymesh, Yfile[0], Yfile[-1])
-            Zmesh = np.clip(Zmesh, Zfile[0], Zfile[-1])
+            Xmesh = np.clip(Xmesh, Xfile[0][0], Xfile[0][-1])
+            Ymesh = np.clip(Ymesh, Yfile[0][0], Yfile[0][-1])
+            Zmesh = np.clip(Zmesh, Zfile[0][0], Zfile[0][-1])
 
             if nz == 1 or len(Zfile) == 1:
-                U = RegularGridInterpolator((Xfile, Yfile), Ufile)(np.array([Xmesh, Ymesh]).T)
-                V = RegularGridInterpolator((Xfile, Yfile), Vfile)(np.array([Xmesh, Ymesh]).T)
-                W = RegularGridInterpolator((Xfile, Yfile), Wfile)(np.array([Xmesh, Ymesh]).T)
-                R = RegularGridInterpolator((Xfile, Yfile), Rfile)(np.array([Xmesh, Ymesh]).T)
-                E = RegularGridInterpolator((Xfile, Yfile), Efile)(np.array([Xmesh, Ymesh]).T)
+                U = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Ufile.T)(np.array([Xmesh, Ymesh]).T).T
+                V = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Vfile.T)(np.array([Xmesh, Ymesh]).T).T
+                W = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Wfile.T)(np.array([Xmesh, Ymesh]).T).T
+                R = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Rfile.T)(np.array([Xmesh, Ymesh]).T).T
+                E = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Efile.T)(np.array([Xmesh, Ymesh]).T).T
             else:
-                U = RegularGridInterpolator((Xfile, Yfile, Zfile), Ufile)(np.array([Xmesh, Ymesh, Zmesh]).T)
-                V = RegularGridInterpolator((Xfile, Yfile, Zfile), Vfile)(np.array([Xmesh, Ymesh, Zmesh]).T)
-                W = RegularGridInterpolator((Xfile, Yfile, Zfile), Wfile)(np.array([Xmesh, Ymesh, Zmesh]).T)
-                R = RegularGridInterpolator((Xfile, Yfile, Zfile), Rfile)(np.array([Xmesh, Ymesh, Zmesh]).T)
-                E = RegularGridInterpolator((Xfile, Yfile, Zfile), Efile)(np.array([Xmesh, Ymesh, Zmesh]).T)
+                U = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Ufile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
+                V = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Vfile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
+                W = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Wfile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
+                R = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Rfile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
+                E = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Efile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
 
             if initialFlow.initial_changeMach != None:
                 if meshFile['flowParameters']['Ma'] != Ma:
@@ -806,8 +828,15 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
         if nz == 1:
             sigmaZ = np.inf
 
-        radius = (X.T - x0)**2 / sigmaX + (Y - y0)**2 / sigmaY
-        radius = np.add(radius, (np.transpose(Z, (0, 2, 1)) - z0)**2 / sigmaZ)
+        # Reshape X to allow broadcasting: (2638, 1, 1)
+        X = ((X[:, np.newaxis, np.newaxis] - x0) ** 2) / sigmaX
+        # Reshape Y to allow broadcasting: (1, 711, 1)
+        Y = ((Y[np.newaxis, :, np.newaxis] - y0) ** 2) / sigmaY
+        # Reshape Z to allow broadcasting: (1, 1, 80)
+        Z = ((Z[np.newaxis, np.newaxis, :] - z0) ** 2) / sigmaZ
+        # Add all terms - broadcasting will handle the expansion
+        radius = X + Y + Z
+
         noiseGaussian = np.exp(-radius)
 
         U += noiseU * noiseGaussian

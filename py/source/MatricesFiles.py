@@ -55,21 +55,21 @@ class Matrices:
         N = matrix.LHS[0].shape[0]
 
         # Prepare LHS
-        A = np.zeros((N - 1, nTypes), dtype=np.float128)
-        B = np.zeros((N, nTypes), dtype=np.float128)
-        C = np.zeros((N - 1, nTypes), dtype=np.float128)
-        D = np.zeros((N, nTypes), dtype=np.float128)
+        A = np.zeros((N - 1, nTypes), dtype=np.float64)
+        B = np.zeros((N, nTypes), dtype=np.float64)
+        C = np.zeros((N - 1, nTypes), dtype=np.float64)
+        D = np.zeros((N, nTypes), dtype=np.float64)
 
-        A1 = np.zeros((1, nTypes), dtype=np.float128)
-        Cn = np.zeros((1, nTypes), dtype=np.float128)
+        A1 = np.zeros((1, nTypes), dtype=np.float64)
+        Cn = np.zeros((1, nTypes), dtype=np.float64)
 
-        Af = np.zeros((N - 1, nTypes), dtype=np.float128)
-        Bf = np.zeros((N, nTypes), dtype=np.float128)
-        Cf = np.zeros((N - 1, nTypes), dtype=np.float128)
-        Df = np.zeros((N, nTypes), dtype=np.float128)
+        Af = np.zeros((N - 1, nTypes), dtype=np.float64)
+        Bf = np.zeros((N, nTypes), dtype=np.float64)
+        Cf = np.zeros((N - 1, nTypes), dtype=np.float64)
+        Df = np.zeros((N, nTypes), dtype=np.float64)
 
-        A1f = np.zeros((1, nTypes), dtype=np.float128)
-        Cnf = np.zeros((1, nTypes), dtype=np.float128)
+        A1f = np.zeros((1, nTypes), dtype=np.float64)
+        Cnf = np.zeros((1, nTypes), dtype=np.float64)
 
         for i in range(nTypes):
             A[:, i] = matrix.LHS[i].diagonal(k=-1)
@@ -112,10 +112,10 @@ class Matrices:
             Cf = np.vstack([Cnf, Cf])
 
             for i in range(nTypes):
-                Dtemp = np.linalg.inv(matrix.LHS[i])
+                Dtemp = np.linalg.inv(matrix.LHS[i].toarray())  # Convertendo a matrix sparsa em densa como requerido por np.linalg.inv
                 D[:, i] = Dtemp[0, :]
 
-                Dtemp = np.linalg.inv(matrix.fLHS[i])
+                Dtemp = np.linalg.inv(matrix.fLHS[i].toarray()) # Convertendo a matrix sparsa em densa como requerido por np.linalg.inv
                 Df[:, i] = Dtemp[0, :]
 
         else:
@@ -136,7 +136,7 @@ class Matrices:
 
 
         done = False
-        RHSTemp = np.zeros((N, N, nTypes), dtype=np.float128)
+        RHSTemp = np.zeros((N, N, nTypes), dtype=np.float64)
 
         for i in range(nTypes):
             RHSTemp[:, :, i] = matrix.RHS[i].todense()
@@ -155,7 +155,7 @@ class Matrices:
                 done = True
 
         done = False
-        RHSTemp = np.zeros((N, N, nTypes), dtype=np.float128)
+        RHSTemp = np.zeros((N, N, nTypes), dtype=np.float64)
 
         for i in range(nTypes):
             RHSTemp[:, :, i] = matrix.fRHS[i].todense()
@@ -193,7 +193,7 @@ class Matrices:
         # Prepare RHS
 
     def fullDiag(self, M, k):
-        D = np.zeros((M.shape[0], 1, M.shape[2]), dtype=np.float128)
+        D = np.zeros((M.shape[0], 1, M.shape[2]), dtype=np.float64)
         for i in range(M.shape[2]):
             D[:, 0, i] = np.diag(np.roll(M[:, :, i], shift=-k, axis=1))
         return D
@@ -898,7 +898,7 @@ class Matrices:
         nf2 = nf1 + ntf - 1
 
         # The buffer zone can be computed by a different type of derivatives. The transition is done smoothly.
-        eta = np.ones(n, dtype=np.float128)
+        eta = np.ones(n, dtype=np.float64)
 
         if ni > 0:
             eta[:ni1] = 0
@@ -956,7 +956,7 @@ class Matrices:
         nf2 = nf1 + ntf
 
         # Buffer zone computation, with smooth transition
-        eta = np.ones(n, dtype=np.float128)
+        eta = np.ones(n, dtype=np.float64)
 
         if ni > 0:
             eta[:ni1] = 0
@@ -1192,7 +1192,7 @@ def sparse_operation_direct(eta, baseMatrixL, bufferMatrixL, i):
     num_diags = baseMatrix_sparse.data.shape[0]  # Número de diagonais
     
     # Criar uma nova matriz para armazenar as diagonais resultantes
-    result_data = np.zeros_like(baseMatrix_sparse.data, dtype=np.float128)
+    result_data = np.zeros_like(baseMatrix_sparse.data, dtype=np.float64)
     
     # Loop sobre as diagonais
     for d in range(num_diags):

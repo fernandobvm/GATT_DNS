@@ -45,6 +45,7 @@ class Preprocessing:
     def select_boundary_conditions(self):
         self.boundary = BoundaryConditions(self.flow_type, self.mesh, self.flow_parameters, [self.numMethods.neumann_order, self.numMethods.neumann2_order])
 
+        print('Going to get_domain_slices')
         domainSlicesY = get_domain_slices(self.mesh.ny, self.p_row)
         domainSlicesZ = get_domain_slices(self.mesh.nz, self.p_col)
 
@@ -617,7 +618,7 @@ class Preprocessing:
         out_file.write(f'    {var_name} = reshape((/')
         for n in range(flattened.shape[0] - 1):
             out_file.write(f'{flattened[n]:.20f}d0,')
-        out_file.write(f'{flattened[-1]}d0/),shape({var_name}))\n')
+        out_file.write(f'{flattened[-1]:.20f}d0/),shape({var_name}))\n') # O último não estava forçando a formatação.
 
     def writeFortranBoundaries(self, caseName, bi):
         """

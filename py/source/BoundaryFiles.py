@@ -1,8 +1,8 @@
 import os
-from copy import deepcopy
+import time
 import numpy as np
+from copy import deepcopy
 from source.library import custom_range, Disturbance
-
 
 def init_boundaries(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col):
     biG = BoundaryInfo(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col)
@@ -3356,6 +3356,9 @@ class BoundaryConditions:
         print(flowRegion.shape)
         i = np.arange(1, self.mesh.nx - 1)
         print(max(i))
+        
+        start_time = time.time()
+        #TODO: Melhorar a performance
         #flowRegion[i, :, :] = flowRegion[i, :, :] | (flowRegion[i - 1, :, :] & flowRegion[i + 1, :, :])
         flowRegion[:, :, i] = np.logical_or(flowRegion[:, :, i], np.logical_and(flowRegion[:, :, i - 1], flowRegion[:, :, i + 1]))
 
@@ -3393,6 +3396,9 @@ class BoundaryConditions:
         wallLeft = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallLeft[1:, :, :] = np.diff(flowRegion.astype(int), axis=0) == -1
 
+        end_time = time.time()
+        print('method:_findWallsForBoundaries')
+        print(f"Tempo de execução: {end_time - start_time:.2f} segundos")
         # Encontra os limites das paredes para as fronteiras
         #wallFrontLimits, wallBackLimits = self._find_wall_limits(self.mesh.nx, wallFront, wallBack, axis=2)
         #wallUpLimits, wallDownLimits = self._find_wall_limits(self.mesh.ny, wallUp, wallDown, axis=1)
@@ -3658,6 +3664,8 @@ class BoundaryConditions:
         corners_matrix[:, :, :, 3] = wallBack & wallDown
         corner_directions = np.array([[1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0]])
         
+        #TODO: Melhorar a performance
+        start_time = time.time()
         for i in range(self.mesh.nx):
             for j in range(self.mesh.ny):
                 for m in range(4):
@@ -3726,6 +3734,10 @@ class BoundaryConditions:
             corners.dir.append(corner_directions[m, :])
 
         corners.adiabatic = np.zeros((len(corners.dir), 1))
+
+        end_time = time.time()
+        print('method:_find_corners')
+        print(f"Tempo de execução: {end_time - start_time:.2f} segundos")
 
         return corners
 
@@ -3836,7 +3848,8 @@ class BoundaryConditions:
                 else:
                     idxs.append(dic[tuple(l[[0, 1]])])
 
-        return insideWalls[np.argsort(idxs, stable=True), :]
+        return insideWalls[np.argsort(idxs, stable=True), :] 
+        # return insideWalls[np.argsort(idxs, kind='stable'), :] # Alternativa caso a versão acima não tiver disponível.
 
     def _sort_and_merge_walls(self, insideWalls):
         insideWalls = self._sort_and_merge_walls2(insideWalls)
