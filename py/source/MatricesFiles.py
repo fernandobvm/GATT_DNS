@@ -887,8 +887,8 @@ class Matrices:
         nf = bufferInfo.buffer_f.n
 
         # Handling transitions
-        nti = round(bufferInfo.buffer_i.transition * ni) if hasattr(bufferInfo.buffer_i, 'transition') else ni
-        ntf = round(bufferInfo.buffer_f.transition * nf) if hasattr(bufferInfo.buffer_f, 'transition') else nf
+        nti = round(bufferInfo.buffer_i.transition * ni) if hasattr(bufferInfo.buffer_i, 'transition') and (bufferInfo.buffer_i.transition is not None) else ni
+        ntf = round(bufferInfo.buffer_f.transition * nf) if hasattr(bufferInfo.buffer_f, 'transition') and (bufferInfo.buffer_f.transition is not None) else nf
         # PERIGO: Dentro da classe tinha um valor default para transition, então a ausência dele no arquivo de parâmetros
         # produz resultados diferentes entre o matlab e python!
 

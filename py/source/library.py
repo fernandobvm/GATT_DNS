@@ -24,7 +24,7 @@ class Mesh:
         self.X = 0    # X coordinates of the mesh
         self.Y = 0    # Y coordinates of the mesh
         self.Z = 0    # Z coordinates of the mesh
-        self.fileCalcBuffer = False
+        
 
     def generateMesh(self, domain):
         #TODO: implementar este método, ele é utilizado no preprocessing.m
@@ -402,6 +402,7 @@ class MeshAxis:
         self.buffer_f = Buffer()  # Buffer for final part
         self.n = None
         self.file = None
+        self.fileCalcBuffer = False
 
 
 
@@ -546,7 +547,7 @@ class FlowType:
         
 class Buffer:
     # TODO: Conferir esse valor 0.2 para transition, talvez devesse ser None.
-    def __init__(self, n=0, buffer_type='sigmoid', stretching=0, transition=0.2, ramp=None, bufferSize = None, bufferType = None):
+    def __init__(self, n=0, buffer_type='sigmoid', stretching=None, transition=None, ramp=None, bufferSize = None, bufferType = None):
         self.n = n
         self.type = buffer_type
         self.stretching = stretching

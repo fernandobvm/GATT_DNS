@@ -126,10 +126,11 @@ def init_boundaries(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col):
             # Similar para as outras variáveis...
 
             #values = [biL.cD, biL.adiabatic]
-            values = np.hstack((np.array(biL.cD), biL.adiabatic))
+            biL.cD = np.array(biL.cD)
+            values = np.hstack(biL.cD, biL.adiabatic) if ((biL.cD.size != 0) and (biL.adiabatic.size != 0)) else np.array([])
             biL.cL, biL.cN, values = biG.limit_indices(biL.cL, biL.cN, values, 'c', Ji, Jf, Ki, Kf, neumann_length)
-            biL.cD = values[:,0:3]
-            biL.adiabatic = values[:, 3]
+            biL.cD = values[:,0:3] if values.size != 0 else np.array([])
+            biL.adiabatic = values[:, 3] if values.size != 0 else np.array([])
 
             # Armazenar resultados no processador
             bi[n_proc] = biL
