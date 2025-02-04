@@ -90,7 +90,11 @@ def runDNS(caseName, flowParameters, domain, flowType, mesh, time, numMethods, p
                 data = getattr(flow_to_save, attr)
                 if isinstance(data, np.ndarray):  # Certifique-se de que é um array NumPy
                     data = np.squeeze(data).T
-                hdf5_file.create_dataset(attr, data=data)
+                if attr != 't':
+                    hdf5_file.create_dataset(attr, data=data, compression="gzip", compression_opts=8) #compression opts goes from 1 to 9 (1 is the less compressed)
+                else:
+                    hdf5_file.create_dataset(attr, data=data)
+
 
         # Verificar se há arquivo de fluxo médio
         if flowType.initial_meanFile != None:

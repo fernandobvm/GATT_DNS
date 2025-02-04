@@ -190,8 +190,8 @@ module readWriteMat
 
 		! Internals
 		integer :: hdf_error
-		integer(hid_t) :: file_id, dataspace_id, dataset_id, dtype_id
-		integer(hsize_t), dimension(3) :: dims
+		integer(hid_t) :: file_id, dataspace_id, dataset_id, plist_id
+		integer(hsize_t), dimension(3) :: dims, chunk_dims
 		integer(hsize_t), dimension(1) :: dims1
 		character(len=50) :: filename
 
@@ -201,10 +201,11 @@ module readWriteMat
 			print *, "Error initializing HDF5"
 			return
 		endif
-		
+
 		! GET DATA SIZE
 		dims = shape(U)
 		dims1(1) = 1
+		chunk_dims = dims / 2  ! Define um chunk menor para melhor compressão (ajustável)
 
 		! DEFINE FILE NAME
 		if (timeStep < 0) then
@@ -219,41 +220,47 @@ module readWriteMat
 		! WRITE SCALAR VARIABLE "t"
 		call h5screate_simple_f(1, dims1, dataspace_id, hdf_error)
 		call h5dcreate_f(file_id, "t", H5T_NATIVE_DOUBLE, dataspace_id, dataset_id, hdf_error)
-		if (hdf_error /= 0) then
-			stop
-		endif
-
 		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, t, dims1, hdf_error)
 		call h5dclose_f(dataset_id, hdf_error)
 		call h5sclose_f(dataspace_id, hdf_error)
 
-		! WRITE 3D VARIABLES "U", "V", "W", "R", "E"
+		! CREATE PROPERTY LIST FOR COMPRESSION
+		call h5pcreate_f(H5P_DATASET_CREATE_F, plist_id, hdf_error)
+		call h5pset_chunk_f(plist_id, 3, chunk_dims, hdf_error)  ! Definir chunks
+		call h5pset_deflate_f(plist_id, 8, hdf_error)  ! Aplicar compressão Gzip nível 8
+
+		! WRITE 3D VARIABLES WITH COMPRESSION
 		call h5screate_simple_f(3, dims, dataspace_id, hdf_error)
-
-		call h5dcreate_f(file_id, "U", H5T_IEEE_F64LE, dataspace_id, dataset_id, hdf_error)
-		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, U, dims, hdf_error)
-		call h5dclose_f(dataset_id, hdf_error)
-
-		call h5dcreate_f(file_id, "V", H5T_IEEE_F64LE, dataspace_id, dataset_id, hdf_error)
-		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, V, dims, hdf_error)
-		call h5dclose_f(dataset_id, hdf_error)
-
-		call h5dcreate_f(file_id, "W", H5T_IEEE_F64LE, dataspace_id, dataset_id, hdf_error)
-		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, W, dims, hdf_error)
-		call h5dclose_f(dataset_id, hdf_error)
-
-		call h5dcreate_f(file_id, "R", H5T_IEEE_F64LE, dataspace_id, dataset_id, hdf_error)
-		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, R, dims, hdf_error)
-		call h5dclose_f(dataset_id, hdf_error)
-
-		call h5dcreate_f(file_id, "E", H5T_IEEE_F64LE, dataspace_id, dataset_id, hdf_error)
-		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, E, dims, hdf_error)
-		call h5dclose_f(dataset_id, hdf_error)
-
+		call write_compressed_dataset(file_id, "U", U, dataspace_id, plist_id, hdf_error)
+		call write_compressed_dataset(file_id, "V", V, dataspace_id, plist_id, hdf_error)
+		call write_compressed_dataset(file_id, "W", W, dataspace_id, plist_id, hdf_error)
+		call write_compressed_dataset(file_id, "R", R, dataspace_id, plist_id, hdf_error)
+		call write_compressed_dataset(file_id, "E", E, dataspace_id, plist_id, hdf_error)
 		call h5sclose_f(dataspace_id, hdf_error)
+
+		! CLOSE PROPERTY LIST
+		call h5pclose_f(plist_id, hdf_error)
 
 		! CLOSE HDF5 FILE
 		call h5fclose_f(file_id, hdf_error)
+		call h5close_f(hdf_error)
+	end subroutine
+	
+	subroutine write_compressed_dataset(file_id, name, data, dataspace_id, plist_id, hdf_error)
+		implicit none
+		integer(hid_t), intent(in) :: file_id, dataspace_id, plist_id
+		integer, intent(out) :: hdf_error
+		character(len=*), intent(in) :: name
+		real*8, dimension(:,:,:), intent(in) :: data
+		integer(hsize_t), dimension(3) :: dims
+		integer(hid_t) :: dataset_id
+
+		dims = shape(data)
+		
+		! Criar dataset com compressão
+		call h5dcreate_f(file_id, name, H5T_NATIVE_DOUBLE, dataspace_id, dataset_id, hdf_error, plist_id)
+		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, data, dims, hdf_error)
+		call h5dclose_f(dataset_id, hdf_error)
 	end subroutine
 
 	subroutine readMeanFlow(U,V,W,R,E)
