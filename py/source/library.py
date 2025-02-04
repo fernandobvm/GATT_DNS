@@ -739,23 +739,51 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
         if initialFlow.initial_flowFile.endswith('/'):
             nStep = checkPreviousRun(initialFlow.initial_flowFile[:-1])  # Assumindo que checkPreviousRun já está definido
             if nStep is not None:
-                initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}flow_{nStep:010d}.npy"
+                initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}flow_{nStep:010d}.h5"
             else:
                 initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}baseflow.npy"
 
         # TODO: Verificar se tem de tratar múltiplos tipos de arquivos aqui.
-        with h5py.File(initialFlow.initial_flowFile,'r') as file:
-            flowFile = {key: file[key][()] for key in file.keys() if key in file}
-        # flowFile = np.load(initialFlow.initial_flowFile, allow_pickle=True).item()  # Assumindo que flowFile contém um dicionário
+        elif initialFlow.initial_flowFile.endswith(('.h5','.mat')):
+            try:
+                print('lendo flowFile com h5py')
+                with h5py.File(initialFlow.initial_flowFile,'r') as file:
+                    flowFile = {key: file[key][()] for key in file.keys() if key in file}
+            except:
+                data = loadmat(initialFlow.initial_flowFile)
+                X = next((data[key] for key in ['U', 'V', 'W', 'R', 'E', 't'] if key in data), None)
+        else:
+            print("Initial flow format not supported. Please provide a .mat or .h5 file.")
 
         if initialFlow.initial_meshFile != None:
             if initialFlow.initial_meshFile.endswith('/'):
-                initialFlow.initial_meshFile = f"{initialFlow.initial_meshFile}mesh.npy"
+                initialFlow.initial_meshFile = f"{initialFlow.initial_meshFile}mesh.h5"
 
             # TODO: Verificar se tem de tratar múltiplos tipos de arquivos aqui.
-            meshFile = loadmat(initialFlow.initial_meshFile)
-            # meshFile = np.load(initialFlow.initial_meshFile, allow_pickle=True).item()
-            Xfile, Yfile, Zfile = meshFile['X'], meshFile['Y'], meshFile['Z']
+            possible_keys = ["X", "Y", "Z"]
+            if initialFlow.initial_meshFile.endswith('.npy'):
+                meshFile = np.load(initialFlow.initial_meshFile)  # Load .npy file directly
+            
+                if len(meshFile.shape) == 1:
+                    meshFile = meshFile.reshape(1, -1)  # Ensure correct shape
+                
+            elif initialFlow.initial_meshFile.endswith(('.h5','.mat')):
+                try:
+                    print('lendo meshFile com h5py')
+                    #with h5py.File(initialFlow.initial_meshFile,'r') as file:
+                    #    meshFile = next((file[key][()] for key in possible_keys if key in file), None).T
+                    with h5py.File(initialFlow.initial_meshFile, 'r') as file:
+                        if all(key in file for key in ['X', 'Y', 'Z']):
+                            Xfile, Yfile, Zfile = file['X'][()], file['Y'][()], file['Z'][()]
+                        else:
+                            raise KeyError("X, Y, or Z not found in the HDF5 file")
+                except:
+                    data = loadmat(initialFlow.initial_meshFile)
+                    Xfile = data['X']
+                    Yfile = data['Y']
+                    Zfile = data['Z']
+            else:
+                print("Mesh format not supported. Please provide a .npy, .mat or .h5 file.")
 
             Ufile, Vfile, Wfile, Rfile, Efile = flowFile['U'], flowFile['V'], flowFile['W'], flowFile['R'], flowFile['E']
 

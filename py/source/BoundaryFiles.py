@@ -3361,16 +3361,28 @@ class BoundaryConditions:
         start_time = time.time()
         #TODO: Melhorar a performance
         #flowRegion[i, :, :] = flowRegion[i, :, :] | (flowRegion[i - 1, :, :] & flowRegion[i + 1, :, :])
-        flowRegion[:, :, i] = np.logical_or(flowRegion[:, :, i], np.logical_and(flowRegion[:, :, i - 1], flowRegion[:, :, i + 1]))
+        #i = np.arange(1, self.mesh.nx - 1)
+        #flowRegion[:, :, i] = np.logical_or(flowRegion[:, :, i], np.logical_and(flowRegion[:, :, i - 1], flowRegion[:, :, i + 1]))
+#
+        ## in y (correspondente ao j em Matlab)
+        #j = np.arange(1, self.mesh.ny - 1)
+        #flowRegion[:, j, :] = np.logical_or(flowRegion[:, j, :] , np.logical_and(flowRegion[:, j - 1, :], flowRegion[:, j + 1, :]))
+#
+        ## in z (correspondente ao k em Matlab)
+        #k = np.arange(1, self.mesh.nz - 1)
+        ##flowRegion[:, :, k] = flowRegion[:, :, k] | (flowRegion[:, :, k - 1] & flowRegion[:, :, k + 1])
+        #flowRegion[k, :, :] = np.logical_or(flowRegion[k, :, :] , np.logical_and(flowRegion[k - 1, :, :] , flowRegion[k + 1, :, :]))
 
-        # in y (correspondente ao j em Matlab)
-        j = np.arange(1, self.mesh.ny - 1)
-        flowRegion[:, j, :] = np.logical_or(flowRegion[:, j, :] , np.logical_and(flowRegion[:, j - 1, :], flowRegion[:, j + 1, :]))
+        flowRegion[:, :, 1:-1] = np.logical_or(flowRegion[:, :, 1:-1], 
+                                       np.logical_and(flowRegion[:, :, :-2], flowRegion[:, :, 2:]))
 
-        # in z (correspondente ao k em Matlab)
-        k = np.arange(1, self.mesh.nz - 1)
-        #flowRegion[:, :, k] = flowRegion[:, :, k] | (flowRegion[:, :, k - 1] & flowRegion[:, :, k + 1])
-        flowRegion[k, :, :] = np.logical_or(flowRegion[k, :, :] , np.logical_and(flowRegion[k - 1, :, :] , flowRegion[k + 1, :, :]))
+        # Otimiza a propagação em y
+        flowRegion[:, 1:-1, :] = np.logical_or(flowRegion[:, 1:-1, :], 
+                                               np.logical_and(flowRegion[:, :-2, :], flowRegion[:, 2:, :]))
+        
+        # Otimiza a propagação em z
+        flowRegion[1:-1, :, :] = np.logical_or(flowRegion[1:-1, :, :], 
+                                       np.logical_and(flowRegion[:-2, :, :], flowRegion[2:, :, :]))
 
         # Criando as paredes
         #wallFront = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
