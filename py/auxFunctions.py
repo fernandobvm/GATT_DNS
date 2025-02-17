@@ -48,7 +48,7 @@ def func_findSteps(path_case, d_step=None, n_step=None):
     all_files = os.listdir(path_case)
     all_steps = []
     for file_name in all_files:
-        if file_name.startswith('flow_'):
+        if file_name.startswith('flow_') and file_name.endswith('.h5'):
             step = int(file_name[5:-3])  # Extract numeric part between 'flow_' and '.h5'
             all_steps.append(step)
 
