@@ -4,7 +4,6 @@ from scipy.sparse import diags, dia_matrix, isspmatrix, isspmatrix_dia, issparse
 from scipy.sparse.linalg import spsolve
 from source.library import *
 
-#Da minha cabeça
 class Dimension:
     def __init__(self):
         self.blocks = []
@@ -112,10 +111,10 @@ class Matrices:
             Cf = np.vstack([Cnf, Cf])
 
             for i in range(nTypes):
-                Dtemp = np.linalg.inv(matrix.LHS[i].toarray())  # Convertendo a matrix sparsa em densa como requerido por np.linalg.inv
+                Dtemp = np.linalg.inv(matrix.LHS[i].toarray())  
                 D[:, i] = Dtemp[0, :]
 
-                Dtemp = np.linalg.inv(matrix.fLHS[i].toarray()) # Convertendo a matrix sparsa em densa como requerido por np.linalg.inv
+                Dtemp = np.linalg.inv(matrix.fLHS[i].toarray()) 
                 Df[:, i] = Dtemp[0, :]
 
         else:
@@ -702,81 +701,6 @@ class Matrices:
         
         return [filterStencilLHS, filterStencilRHS, filterDecenteredStencilLHS, filterDecenteredStencilRHS]
     
-    def __makeMatricesEachDirection2(self, centeredStencilLHS, centeredStencilRHS, decenteredStencilLHS, decenteredStencilRHS, derivStarts, derivEnds, n, bufferInfo):
-        
-        if n != 1 and n < 2 * len(centeredStencilRHS) - 1:
-            raise ValueError(f'Mesh is not large enough for one of the stencils. It has {n} nodes but the stencil needs at least {2 * len(centeredStencilRHS) - 1}.')
-        
-        nTypes = len(derivStarts)
-        
-        LHS = [None] * nTypes
-        RHS = [None] * nTypes
-        
-        if n == 1:
-            if centeredStencilRHS[0] == 0:
-                for i in range(nTypes):
-                    LHS[i] = 1
-                    RHS[i] = 0
-            else:
-                for i in range(nTypes):
-                    LHS[i] = 1
-                    RHS[i] = 1
-            return LHS, RHS
-        
-        LHS_base = diags([centeredStencilLHS[0]] * n, 0).toarray()
-        RHS_base = diags([centeredStencilRHS[0]] * n, 0).toarray()
-        
-        invertStencil = -1 if centeredStencilRHS[0] == 0 else 1
-        
-        for i in range(1, len(centeredStencilLHS)):
-            inds = np.arange(n) + i
-            inds = np.mod(inds, n)
-            LHS_base[np.arange(n), inds] = centeredStencilLHS[i]
-            inds = np.arange(n) - i
-            inds = np.mod(inds, n)
-            LHS_base[np.arange(n), inds] = centeredStencilLHS[i]
-        
-        for i in range(1, len(centeredStencilRHS)):
-            inds = np.arange(n) + i
-            inds = np.mod(inds, n)
-            RHS_base[np.arange(n), inds] = centeredStencilRHS[i]
-            inds = np.arange(n) - i
-            inds = np.mod(inds, n)
-            RHS_base[np.arange(n), inds] = invertStencil * centeredStencilRHS[i]
-        
-        if bufferInfo:
-            if hasattr(bufferInfo.buffer_i, 'upwind') and bufferInfo.buffer_i.upwind:
-                for i in range(nTypes):
-                    derivStarts[i] = sorted(set(derivStarts[i] + list(range(1, bufferInfo.buffer_i.n + 1))), reverse=True)
-            if hasattr(bufferInfo.buffer_f, 'upwind') and bufferInfo.buffer_f.upwind:
-                for i in range(nTypes):
-                    derivEnds[i] = sorted(set(derivEnds[i] + list(range(n - bufferInfo.buffer_f.n + 1, n + 1))))
-        
-        mLHS, nLHS = get_array_dimensions(decenteredStencilLHS)
-        mRHS, nRHS = get_array_dimensions(decenteredStencilRHS)
-        
-        for i in range(nTypes):
-            LHS_temp = LHS_base.copy()
-            RHS_temp = RHS_base.copy()
-            
-            for ind_start in derivStarts[i]:
-                LHS_temp[ind_start:ind_start + mLHS] = 0
-                RHS_temp[ind_start:ind_start + mRHS] = 0
-                LHS_temp[ind_start:ind_start + mLHS, ind_start:ind_start + nLHS] = decenteredStencilLHS
-                RHS_temp[ind_start:ind_start + mRHS, ind_start:ind_start + nRHS] = decenteredStencilRHS
-            
-            for ind_end in derivEnds[i]:
-                LHS_temp[ind_end - mLHS + 1:ind_end + 1] = 0
-                RHS_temp[ind_end - mRHS + 1:ind_end + 1] = 0
-                LHS_temp[ind_end - mLHS + 1:ind_end + 1, ind_end - nLHS + 1:ind_end + 1] = np.flipud(np.fliplr(decenteredStencilLHS))
-                RHS_temp[ind_end - mRHS + 1:ind_end + 1, ind_end - nRHS + 1:ind_end + 1] = invertStencil * np.flipud(np.fliplr(decenteredStencilRHS))
-            
-            LHS[i] = lil_matrix(LHS_temp)
-            RHS[i] = lil_matrix(RHS_temp)
-        
-        return LHS, RHS
-    
-    
     def __makeMatricesEachDirection(self, centeredStencilLHS, centeredStencilRHS, decenteredStencilLHS, decenteredStencilRHS, derivStarts, derivEnds, n, bufferInfo):
         # Check if the mesh is large enough for the stencil
         if n != 1 and n < 2 * len(centeredStencilRHS) - 1:
@@ -913,15 +837,11 @@ class Matrices:
 
         eta = np.sqrt(eta)
 
-        eta = eta.T                 # Não vi nada no matlab sobre isso, mas sem isso a precisão diminui em relação ao matlab..
-        eta = eta[:, np.newaxis]    # Não vi nada no matlab sobre isso, mas sem isso a precisão diminui em relação ao matlab..
+        eta = eta.T                 
+        eta = eta[:, np.newaxis]    
 
-        # Para cada tipo de derivada, realizar a operação nas matrizes esparsas
         for baseL, bufferL, baseR, bufferR in zip(baseMatrixL, bufferMatrixL, baseMatrixR, bufferMatrixR):
-            # Operar diretamente sem conversões desnecessárias
             if issparse(baseL) and issparse(bufferL):
-                #resultL = baseL.multiply(eta[:, np.newaxis]) + bufferL.multiply((1 - eta)[:, np.newaxis])
-                #resultR = baseR.multiply(eta[:, np.newaxis]) + bufferR.multiply((1 - eta)[:, np.newaxis])
 
                 resultL = csr_matrix(eta).multiply(baseL) + csr_matrix(1 - eta).multiply(bufferL)
                 resultR = csr_matrix(eta).multiply(baseR) + csr_matrix(1 - eta).multiply(bufferR)
@@ -929,62 +849,10 @@ class Matrices:
                 resultL = eta * baseL + (1 - eta) * bufferL
                 resultR = eta * baseR + (1 - eta) * bufferR
 
-            # Converter diretamente para DIA com corretos offsets
-            # dia_resultL = diags(resultL.diagonal(), offsets=0, shape=resultL.shape, format='dia')
-            # dia_resultR = diags(resultR.diagonal(), offsets=0, shape=resultR.shape, format='dia')
-            # Comentei aqui em cima por que não estava em uso e estava gerando um problema após minha alteração para usar csc_matrix.
-
-            #newMatrixL.append(dia_resultL)
-            #newMatrixR.append(dia_resultR)
-
             newMatrixL.append(resultL)
             newMatrixR.append(resultR)
 
         return newMatrixL, newMatrixR
-
-    def __addBufferToMatrix2(self, baseMatrixL, bufferMatrixL, baseMatrixR, bufferMatrixR, n, bufferInfo):
-        ni = bufferInfo.buffer_i.n
-        nf = bufferInfo.buffer_f.n
-
-        # Handling transitions
-        nti = round(bufferInfo.buffer_i.transition * ni) if hasattr(bufferInfo.buffer_i, 'transition') else ni
-        ntf = round(bufferInfo.buffer_f.transition * nf) if hasattr(bufferInfo.buffer_f, 'transition') else nf
-
-        ni1 = ni - nti
-        ni2 = ni
-        nf1 = n - nf
-        nf2 = nf1 + ntf
-
-        # Buffer zone computation, with smooth transition
-        eta = np.ones(n, dtype=np.float64)
-
-        if ni > 0:
-            eta[:ni1] = 0
-            eta[ni1:ni2] = 0.5 - 0.5 * np.cos(np.linspace(0, np.pi, ni2 - ni1))
-
-        if nf > 0:
-            eta[nf2:] = 0
-            eta[nf1:nf2] = 0.5 + 0.5 * np.cos(np.linspace(0, np.pi, nf2 - nf1))
-
-        newMatrixL = []
-        newMatrixR = []
-
-        # Process each derivative type, directly in sparse matrices
-        for baseL, bufferL, baseR, bufferR in zip(baseMatrixL, bufferMatrixL, baseMatrixR, bufferMatrixR):
-            if isspmatrix_dia(baseL) and isspmatrix_dia(bufferL):
-                # Direct operation on sparse diagonal matrices (DIA)
-                resultL = dia_matrix((eta[:, np.newaxis] * baseL.data + (1 - eta[:, np.newaxis]) * bufferL.data, baseL.offsets), shape=baseL.shape)
-                resultR = dia_matrix((eta[:, np.newaxis] * baseR.data + (1 - eta[:, np.newaxis]) * bufferR.data, baseR.offsets), shape=baseR.shape)
-            else:
-                # Handle dense or integer matrices
-                resultL = eta[:, np.newaxis] * baseL + (1 - eta[:, np.newaxis]) * bufferL
-                resultR = eta[:, np.newaxis] * baseR + (1 - eta[:, np.newaxis]) * bufferR
-
-            newMatrixL.append(resultL)
-            newMatrixR.append(resultR)
-
-        return newMatrixL, newMatrixR
-
     
     def __applyMetric(self, LHS, X, meshInfo, xf, method):
         """
@@ -1033,21 +901,6 @@ class Matrices:
         startAttr = f'filter_borders_start_{axis.lower()}'
         endAttr = f'filter_borders_end_{axis.lower()}'
 
-        #if hasattr(numMethods, startAttr) and not getattr(numMethods, startAttr):
-        #    for i in range(len(fLHS)):
-        #        fLHS[i][:5, :] = 0
-        #        fRHS[i][:5, :] = 0
-        #        fLHS[i][:5, :5] = np.eye(5)
-        #        fRHS[i][:5, :5] = np.eye(5)
-
-        #if hasattr(numMethods, endAttr) and not getattr(numMethods, endAttr):
-        #    for i in range(len(fLHS)):
-        #        fLHS[i][-5:, :] = 0
-        #        fRHS[i][-5:, :] = 0
-        #        fLHS[i][-5:, -5:] = np.eye(5)
-        #        fRHS[i][-5:, -5:] = np.eye(5)
-
-
         if hasattr(numMethods, startAttr) and not getattr(numMethods, startAttr):
             for i in range(len(fLHS)):
                 fLHS[i] = fLHS[i].tolil()
@@ -1082,15 +935,12 @@ class Matrices:
     
     
     def getMatrixTypeBlocks(self, typeMap, p_row, p_col):
-        # Define o tamanho máximo do bloco
-        maxBlockSize = 128  # Máximo número de linhas por bloco, blocos maiores serão divididos
+        maxBlockSize = 128
 
-        # Inicializa a lista de blocos
         blocks = [[] for _ in range(p_row * p_col)]
 
         J, K = typeMap.shape
 
-        # Obter todos os blocos
         allBlocks = []
         for k in range(K):
             starts = np.append([1], np.where(np.diff(typeMap[:, k]) != 0)[0] + 2)
@@ -1098,7 +948,6 @@ class Matrices:
             allBlocks.append(np.column_stack((typeMap[starts-1, k] , starts, ends, np.full((len(starts), 2), k+1))))
 
         allBlocks = np.vstack(allBlocks)
-        # Mesclar blocos
         i = 0
         while i < allBlocks.shape[0] - 1:
             j = i + 1
@@ -1110,7 +959,6 @@ class Matrices:
                     j += 1
             i += 1
 
-        # Dividir blocos para processadores
         domainSlicesY = get_domain_slices(J, p_row)
         domainSlicesZ = get_domain_slices(K, p_col)
 
@@ -1134,7 +982,6 @@ class Matrices:
 
                 blocks[nProc] = bL
 
-        # Reduzir tamanhos dos blocos, se necessário
         if maxBlockSize != float('inf'):
             for nProc in range(p_row * p_col):
                 bL = blocks[nProc]
@@ -1168,14 +1015,6 @@ def safe_flip(array):
     arr = np.array(array) if not isinstance(array, int) else np.array([array]) 
     return arr[::-1, ::-1] if arr.ndim > 1 else arr[::-1]
 
-    if isinstance(array, int):  # Verifica se o array é um valor inteiro
-        return np.array([array])  # Converte o inteiro para um array 2D com um único valor
-    elif isinstance(array, list):  # Verifica se o array é uma lista
-        array = np.array(array)
-    if array.size == 1:  # Verifica se o array tem apenas um elemento
-        return array
-    else:
-        return np.flip(array, axis=(0, 1))  # Aplica o flip normalmente
     
 def to_numpy_vector(value):
     if np.isscalar(value):
@@ -1183,26 +1022,21 @@ def to_numpy_vector(value):
     else:
         return np.array(value)
             
-#TODO: Verificar a otimização disso
+#TODO: Verify optimization
 def sparse_operation_direct(eta, baseMatrixL, bufferMatrixL, i):
-    # Obter a matriz esparsa diagonal (DIAgonal) de base e buffer
     baseMatrix_sparse = baseMatrixL[i]
     bufferMatrix_sparse = bufferMatrixL[i]
     
-    num_diags = baseMatrix_sparse.data.shape[0]  # Número de diagonais
+    num_diags = baseMatrix_sparse.data.shape[0] 
     
-    # Criar uma nova matriz para armazenar as diagonais resultantes
     result_data = np.zeros_like(baseMatrix_sparse.data, dtype=np.float64)
     
-    # Loop sobre as diagonais
     for d in range(num_diags):
-        base_diag = baseMatrix_sparse.data[d]  # Obter os valores da diagonal d
-        buffer_diag = bufferMatrix_sparse.data[d]  # Obter os valores da diagonal d
+        base_diag = baseMatrix_sparse.data[d]
+        buffer_diag = bufferMatrix_sparse.data[d] 
         
-        # Efetuar a operação diretamente sobre os valores da diagonal
         result_data[d] = eta[:, np.newaxis] * base_diag + (1 - eta[:, np.newaxis]) * buffer_diag
     
-    # Criar uma nova matriz esparsa DIAgonal com as diagonais resultantes
     result_sparse = dia_matrix((result_data, baseMatrix_sparse.offsets), shape=baseMatrix_sparse.shape)
     
     return result_sparse
@@ -1213,11 +1047,10 @@ def ensure_iterable(var):
     return var
 
 def get_array_dimensions(array):
-    shape = np.shape(array)  # Obtém as dimensões do array
-    if len(shape) == 0:  # Caso seja um número único
+    shape = np.shape(array)
+    if len(shape) == 0:
         return 1, 1
-    elif len(shape) == 1:  # Caso seja um vetor de 1D
-        # return shape[0], 1
-        return 1, shape[0] # Inverti aqui, mas é perigoso, o ideal deve ser mexer na origem para nunca trabalhar com (x,).
+    elif len(shape) == 1:
+        return 1, shape[0] 
     else:
         return shape

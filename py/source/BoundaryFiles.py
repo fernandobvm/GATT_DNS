@@ -7,7 +7,6 @@ from source.library import custom_range, Disturbance
 def init_boundaries(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col):
     biG = BoundaryInfo(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col)
 
-    # Ordem das direções
     direction_order = ['xi', 'xf', 'yi', 'yf', 'zi', 'zf']
 
     for i in range(len(boundary.val)):
@@ -77,35 +76,29 @@ def init_boundaries(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col):
                 biG.iEs.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
                 biG.dEs.append(direction_index+1)
 
-    # Configurações dos corners
     biG.cL = boundary.corners.limits
     biG.cD = boundary.corners.dir
     biG.adiabatic = boundary.corners.adiabatic
     biG.cN = len(biG.cL)
 
-    # Coeficientes de Neumann
     neumann_length = len(boundary.neumann_coeffs)
     neumann2_length = len(boundary.neumann2_coeffs)
 
-    # Valor de gamma-1 para conversão de pressão em densidade
     biG.gamma1 = boundary.gamma - 1
 
-    # Configurações do campo elétrico
     biG.E0 = boundary.E0
 
-    # Divisão para diferentes processadores
     bi = [None] * (p_row * p_col)
     for j in range(p_row):
         for k in range(p_col):
             n_proc = k + j * p_col
-            biL = deepcopy(biG)  # Cria cópia temporária para este processador
+            biL = deepcopy(biG)
 
             Ji = domainSlicesY[0, j]
             Jf = domainSlicesY[1, j]
             Ki = domainSlicesZ[0, k]
             Kf = domainSlicesZ[1, k]
 
-            # Limitar índices (função externa)
             biL.iUd, biL.nUd, biL.vUd = biG.limit_indices(biL.iUd, biL.nUd, biL.vUd, 'd', Ji, Jf, Ki, Kf, 0)
             biL.iVd, biL.nVd, biL.vVd = biG.limit_indices(biL.iVd, biL.nVd, biL.vVd, 'd', Ji, Jf, Ki, Kf, 0)
             biL.iWd, biL.nWd, biL.vWd = biG.limit_indices(biL.iWd, biL.nWd, biL.vWd, 'd', Ji, Jf, Ki, Kf, 0)
@@ -123,50 +116,41 @@ def init_boundaries(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col):
             biL.iWs, biL.nWs, biL.dWs = biG.limit_indices(biL.iWs, biL.nWs, biL.dWs,'n',Ji,Jf,Ki,Kf,neumann2_length)
             biL.iPs, biL.nPs, biL.dPs = biG.limit_indices(biL.iPs, biL.nPs, biL.dPs,'n',Ji,Jf,Ki,Kf,neumann2_length)
             biL.iEs, biL.nEs, biL.dEs = biG.limit_indices(biL.iEs, biL.nEs, biL.dEs,'n',Ji,Jf,Ki,Kf,neumann2_length)
-            # Similar para as outras variáveis...
 
-            #values = [biL.cD, biL.adiabatic]
+            
             biL.cD = np.array(biL.cD)
             values = np.hstack((biL.cD, biL.adiabatic)) if ((biL.cD.size != 0) and (biL.adiabatic.size != 0)) else np.array([])
             biL.cL, biL.cN, values = biG.limit_indices(biL.cL, biL.cN, values, 'c', Ji, Jf, Ki, Kf, neumann_length)
             biL.cD = values[:,0:3] if values.size != 0 else np.array([])
             biL.adiabatic = values[:, 3] if values.size != 0 else np.array([])
 
-            # Armazenar resultados no processador
+            
             bi[n_proc] = biL
             
     return split_disturbances(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col, bi)
 
 def split_disturbances(boundary, mesh, domain_slices_y, domain_slices_z, p_row, p_col, bi):
 
-    # Iteração sobre processadores (j e k)
     for j in range(p_row):
         for k in range(p_col):
-            n_proc = k + j * p_col  # Calcula o índice do processador atual (Python já está com indexação ajustada)
-            disturb = []  # Lista que armazenará os distúrbios para o processador atual
+            n_proc = k + j * p_col
+            disturb = []
             
-            # Itera sobre todos os distúrbios em boundary.disturb
             for i in range(len(boundary.disturb)):
                 if boundary.disturb[i] is not None:
-                    # ConvMATLAB: O Matlab faz cópia implícita dos vetores nesse tipo de atribuição, enquanto o 
-                    # Python apenas compartilha o apontamento. Desse modo, como o vetor sofrerá potencialmente 
-                    # múltiplas edições, será preciso fazer uma cópia do vetor.
                     ind = deepcopy(boundary.disturb[i].ind)
                     ind[2:6] = [max(ind[2], domain_slices_y[0][j]), min(ind[3], domain_slices_y[1][j]), 
                                 max(ind[4], domain_slices_z[0][k]), min(ind[5], domain_slices_z[1][k])]
 
-                    # Verifica se o índice é válido
                     if ind[2] <= ind[3] and ind[4] <= ind[5]:
-                        # Cria um novo objeto Disturbance para adicionar à lista disturb
                         new_disturb = deepcopy(boundary.disturb[i])
                         new_disturb.ind = ind
-                        new_disturb.X = mesh.X[ind[0]-1:ind[1]]  # Ajusta o slice para Python
+                        new_disturb.X = mesh.X[ind[0]-1:ind[1]]
                         new_disturb.Y = mesh.Y[ind[2]-1:ind[3]]
                         new_disturb.Z = mesh.Z[ind[4]-1:ind[5]]
                         
                         disturb.append(new_disturb)
             
-            # Atribui a lista de distúrbios ao processador correspondente
             bi[n_proc].disturb = disturb
     return bi
 
@@ -225,7 +209,6 @@ class BoundaryInfo:
         self.E0 = 0
 
         self.directionOrder = ['xi','xf','yi','yf','zi','zf']
-        # Get information on corners
         self.cL = boundary.corners.limits
         self.cD = boundary.corners.dir
         self.adiabatic = boundary.corners.adiabatic
@@ -233,186 +216,41 @@ class BoundaryInfo:
 
         self.neumannLength = len(boundary.neumann_coeffs)
         self.neumann2Length = len(boundary.neumann2_coeffs)
-        # Set gamma-1 value for converting pressure to density
         self.gamma1 = boundary.gamma - 1
-        # Find regions inside walls
-        #self.wR = ~boundary.flowRegion;
         self.E0 = boundary.E0
 
         self.disturb = []
 
-        #self.__init_boundaries(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col)
         
 
     def return_vector(self):
         return self.bi
 
 
-    def __init_boundaries(self, boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col):
-        #biG = BoundaryInfo(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col)
-
-        # Ordem das direções
-        direction_order = ['xi', 'xf', 'yi', 'yf', 'zi', 'zf']
-
-        for i in range(len(boundary.val)):
-            if boundary.type[i] == 'dir':
-                if boundary.var[i] == 'u':
-                    self.nUd += 1
-                    self.iUd.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.vUd.append(boundary.val[i])
-                elif boundary.var[i] == 'v':
-                    self.nVd += 1
-                    self.iVd.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.vVd.append(boundary.val[i])
-                elif boundary.var[i] == 'w':
-                    self.nWd += 1
-                    self.iWd.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.vWd.append(boundary.val[i])
-                elif boundary.var[i] == 'p':
-                    self.nPd += 1
-                    self.iPd.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.vPd.append(boundary.val[i])
-                elif boundary.var[i] == 'e':
-                    self.nEd += 1
-                    self.iEd.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.vEd.append(boundary.val[i])
-            elif boundary.type[i] == 'neu':
-                direction_index = direction_order.index(boundary.dir[i])
-                if boundary.var[i] == 'u':
-                    self.nUn += 1
-                    self.iUn.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dUn.append(direction_index+1)
-                elif boundary.var[i] == 'v':
-                    self.nVn += 1
-                    self.iVn.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dVn.append(direction_index+1)
-                elif boundary.var[i] == 'w':
-                    self.nWn += 1
-                    self.iWn.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dWn.append(direction_index+1)
-                elif boundary.var[i] == 'p':
-                    self.nPn += 1
-                    self.iPn.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dPn.append(direction_index+1)
-                elif boundary.var[i] == 'e':
-                    self.nEn += 1
-                    self.iEn.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dEn.append(direction_index+1)
-            elif boundary.type[i] == 'sec':
-                direction_index = direction_order.index(boundary.dir[i])
-                if boundary.var[i] == 'u':
-                    self.nUs += 1
-                    self.iUs.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dUs.append(direction_index+1)
-                elif boundary.var[i] == 'v':
-                    self.nVs += 1
-                    self.iVs.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dVs.append(direction_index+1)
-                elif boundary.var[i] == 'w':
-                    self.nWs += 1
-                    self.iWs.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dWs.append(direction_index+1)
-                elif boundary.var[i] == 'p':
-                    self.nPs += 1
-                    self.iPs.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dPs.append(direction_index+1)
-                elif boundary.var[i] == 'e':
-                    self.nEs += 1
-                    self.iEs.append([boundary.xi[i], boundary.xf[i], boundary.yi[i], boundary.yf[i], boundary.zi[i], boundary.zf[i]])
-                    self.dEs.append(direction_index+1)
-
-        # Configurações dos corners
-        self.cL = boundary.corners.limits
-        self.cD = boundary.corners.dir
-        self.adiabatic = boundary.corners.adiabatic
-        self.cN = len(self.cL)
-
-        # Coeficientes de Neumann
-        neumann_length = len(boundary.neumann_coeffs)
-        neumann2_length = len(boundary.neumann2_coeffs)
-
-        # Valor de gamma-1 para conversão de pressão em densidade
-        self.gamma1 = boundary.gamma - 1
-
-        # Configurações do campo elétrico
-        self.E0 = boundary.E0
-
-        # Divisão para diferentes processadores
-        self.bi = [None] * (p_row * p_col)
-        for j in range(p_row):
-            for k in range(p_col):
-                n_proc = k + j * p_col
-                biL = deepcopy(self)  # Cria cópia temporária para este processador
-
-                Ji = domainSlicesY[0, j]
-                Jf = domainSlicesY[1, j]
-                Ki = domainSlicesZ[0, k]
-                Kf = domainSlicesZ[1, k]
-
-                # Limitar índices (função externa)
-                biL.iUd, biL.nUd, biL.vUd = self.limit_indices(biL.iUd, biL.nUd, biL.vUd, 'd', Ji, Jf, Ki, Kf, 0)
-                biL.iVd, biL.nVd, biL.vVd = self.limit_indices(biL.iVd, biL.nVd, biL.vVd, 'd', Ji, Jf, Ki, Kf, 0)
-                biL.iWd, biL.nWd, biL.vWd = self.limit_indices(biL.iWd, biL.nWd, biL.vWd, 'd', Ji, Jf, Ki, Kf, 0)
-                biL.iPd, biL.nPd, biL.vPd = self.limit_indices(biL.iPd, biL.nPd, biL.vPd, 'd', Ji, Jf, Ki, Kf, 0)
-                biL.iEd, biL.nEd, biL.vEd = self.limit_indices(biL.iEd, biL.nEd, biL.vEd, 'd', Ji, Jf, Ki, Kf, 0)
-
-                biL.iUn, biL.nUn, biL.dUn = self.limit_indices(biL.iUn, biL.nUn, biL.dUn, 'n', Ji, Jf, Ki, Kf, neumann_length)
-                biL.iVn, biL.nVn, biL.dVn = self.limit_indices(biL.iVn, biL.nVn, biL.dVn, 'n', Ji, Jf, Ki, Kf, neumann_length)
-                biL.iWn, biL.nWn, biL.dWn = self.limit_indices(biL.iWn, biL.nWn, biL.dWn, 'n', Ji, Jf, Ki, Kf, neumann_length)
-                biL.iPn, biL.nPn, biL.dPn = self.limit_indices(biL.iPn, biL.nPn, biL.dPn, 'n', Ji, Jf, Ki, Kf, neumann_length)
-                biL.iEn, biL.nEn, biL.dEn = self.limit_indices(biL.iEn, biL.nEn, biL.dEn, 'n', Ji, Jf, Ki, Kf, neumann_length)
-
-                biL.iUs, biL.nUs, biL.dUs = self.limit_indices(biL.iUs, biL.nUs, biL.dUs,'n',Ji,Jf,Ki,Kf,neumann2_length)
-                biL.iVs, biL.nVs, biL.dVs = self.limit_indices(biL.iVs, biL.nVs, biL.dVs,'n',Ji,Jf,Ki,Kf,neumann2_length)
-                biL.iWs, biL.nWs, biL.dWs = self.limit_indices(biL.iWs, biL.nWs, biL.dWs,'n',Ji,Jf,Ki,Kf,neumann2_length)
-                biL.iPs, biL.nPs, biL.dPs = self.limit_indices(biL.iPs, biL.nPs, biL.dPs,'n',Ji,Jf,Ki,Kf,neumann2_length)
-                biL.iEs, biL.nEs, biL.dEs = self.limit_indices(biL.iEs, biL.nEs, biL.dEs,'n',Ji,Jf,Ki,Kf,neumann2_length)
-                # Similar para as outras variáveis...
-
-                #values = [biL.cD, biL.adiabatic]
-                values = np.hstack((np.array(biL.cD), biL.adiabatic))
-                biL.cL, biL.cN, values = self.limit_indices(biL.cL, biL.cN, values, 'c', Ji, Jf, Ki, Kf, neumann_length)
-                biL.cD = values[:,0:3]
-                biL.adiabatic = values[:, 3]
-
-                # Armazenar resultados no processador
-                self.bi[n_proc] = biL
-                
-        self.split_disturbances(boundary, mesh, domainSlicesY, domainSlicesZ, p_row, p_col)
-        
-    
     def limit_indices(self, ind, n, vd, boundary_type, Ji, Jf, Ki, Kf, neumann_length):
         ind = np.array(ind)
         vd = np.array(vd)
         if n == 0:
             return ind, n, vd
         
-        # Ajustando índices com max/min conforme o Matlab
         for i in range(n):
             ind[i,2:6] = [max(ind[i,2], Ji), min(ind[i,3], Jf), max(ind[i,4], Ki), min(ind[i,5], Kf)]
-            #ind[i,2:6] = [max(ind[i,2], Ji), min(ind[i,3], Jf), max(ind[i,4], Ki), min(ind[i,5], Kf)]
         
-        # Identificando índices a serem removidos
         to_remove = np.logical_or(ind[:, 2] > ind[:, 3], ind[:, 4] > ind[:, 5])
         
-        # Removendo entradas inválidas
         ind = ind[~to_remove, :]
 
-        # Atualizando 'vd' (vetor ou matriz) dependendo do tamanho
         if np.ndim(vd) == 1 and n > 1:
-        # Caso vd seja um vetor (1D array) e n > 1, remover elementos com base em toRemove
-            vd = np.delete(vd, np.where(to_remove)[0])  # np.where(toRemove) retorna os índices de True
+            vd = np.delete(vd, np.where(to_remove)[0])
         elif np.ndim(vd) == 1 and n == 1:
             vd = np.delete(vd, np.where(to_remove)[0])
         elif vd.size == 0:
             pass
-        # Caso vd seja uma matriz (2D array), remover as linhas onde toRemove é True
             vd = vd[~to_remove, :]
 
         
         n -= sum(to_remove)
         
-        # Tratamento para Neumann
         if boundary_type == 'n':
             for i in range(n):
                 if vd[i] == 3:
@@ -430,35 +268,7 @@ class BoundaryInfo:
         
         return ind, n, vd
 
-    def split_disturbances(self, boundary, mesh, domain_slices_y, domain_slices_z, p_row, p_col):
     
-        # Iteração sobre processadores (j e k)
-        for j in range(p_row):
-            for k in range(p_col):
-                n_proc = k + j * p_col  # Calcula o índice do processador atual (Python já está com indexação ajustada)
-                disturb = []  # Lista que armazenará os distúrbios para o processador atual
-                
-                # Itera sobre todos os distúrbios em boundary.disturb
-                for i in range(len(boundary.disturb)):
-                    if boundary.disturb[i] is not None:
-                        ind = boundary.disturb[i].ind
-                        ind[2:6] = [max(ind[2], domain_slices_y[0][j]), min(ind[3], domain_slices_y[1][j]), 
-                                    max(ind[4], domain_slices_z[0][k]), min(ind[5], domain_slices_z[1][k])]
-
-                        # Verifica se o índice é válido
-                        if ind[2] <= ind[3] and ind[4] <= ind[5]:
-                            # Cria um novo objeto Disturbance para adicionar à lista disturb
-                            new_disturb = Disturbance()
-                            new_disturb.ind = ind
-                            new_disturb.X = mesh.X[ind[0]:ind[1]+1]  # Ajusta o slice para Python
-                            new_disturb.Y = mesh.Y[ind[2]:ind[3]+1]
-                            new_disturb.Z = mesh.Z[ind[4]:ind[5]+1]
-                            
-                            disturb.append(new_disturb)
-                
-                # Atribui a lista de distúrbios ao processador correspondente
-                self.bi[n_proc].disturb = disturb
-
 
 
 class Wall:
@@ -575,7 +385,6 @@ class BoundaryConditions:
                 case 5:
                     currentWall = self.wall.left
             for j in range(0, currentWall.shape[0]):
-                #self.inside_wall[currentWall[j,0]:currentWall[j,1]+1, currentWall[j,2]:currentWall[j,3]+1, currentWall[j,4]:currentWall[j,5]+1] = False
                 self.inside_wall[currentWall[j,4]:currentWall[j,5]+1, currentWall[j,2]:currentWall[j,3]+1, currentWall[j,0]:currentWall[j,1]+1] = False
         
         # Neumann condition coefficients
@@ -638,12 +447,12 @@ class BoundaryConditions:
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
             self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
-            self.flow_type.disturb[0].y = [-np.inf, np.inf] #Verificar o funcionamento dos inf no python
+            self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
             self.flow_type.disturb[0].type = 'holdInlet'
             self.flow_type.disturb[0].active = True
-            self.flow_type.disturb[0].par = [0] #Hold density
+            self.flow_type.disturb[0].par = [0]
 
         #p
         self.var.append('p')
@@ -904,7 +713,7 @@ class BoundaryConditions:
 
         ## Define flow region
         # Find which nodes will actually contain a flow and which ones will be in or at a wall
-        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) #essa função tem um comportamento diferente da função TRUE do matlab
+        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) 
         # Add flat plate
         wallJ = np.argmin(np.abs(self.mesh.Y))
         flowRegion[:, 0:wallJ+1, :] = False
@@ -920,7 +729,6 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
 
         # Remove roughnesses from the flow
@@ -1140,7 +948,7 @@ class BoundaryConditions:
                     self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
                 self.flow_type.disturb[0] = []
                 self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
-                self.flow_type.disturb[0].y = [-np.inf, np.inf] #Verificar o funcionamento dos inf no python
+                self.flow_type.disturb[0].y = [-np.inf, np.inf] 
                 self.flow_type.disturb[0].z = [-np.inf, np.inf]
                 self.flow_type.disturb[0].var = 'UVRWE'
                 self.flow_type.disturb[0].type = 'holdInlet'
@@ -1407,7 +1215,7 @@ class BoundaryConditions:
 
         ## Define flow region
         # Find which nodes will actually contain a flow and which ones will be in or at a wall
-        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) #essa função tem um comportamento diferente da função TRUE do matlab
+        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx))
         if not self.mesh.y.periodic:
             # Add flat plate
             wallJ = np.argmin(np.abs(self.mesh.Y))
@@ -1424,7 +1232,6 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
 
         # Remove roughnesses from the flow
@@ -1624,7 +1431,7 @@ class BoundaryConditions:
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
             self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
-            self.flow_type.disturb[0].y = [-np.inf, np.inf] #Verificar o funcionamento dos inf no python
+            self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
             self.flow_type.disturb[0].type = 'holdInlet'
@@ -1890,7 +1697,7 @@ class BoundaryConditions:
 
         ## Define flow region
         # Find which nodes will actually contain a flow and which ones will be in or at a wall
-        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) #essa função tem um comportamento diferente da função TRUE do matlab
+        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) 
         # Add flat plate
         wallJ = np.argmin(np.abs(self.mesh.Y))
         flowRegion[:, 0:wallJ+1, :] = False
@@ -1906,7 +1713,7 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
+                
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
 
         # Remove roughnesses from the flow
@@ -2130,7 +1937,7 @@ class BoundaryConditions:
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
             self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
-            self.flow_type.disturb[0].y = [-np.inf, np.inf] #Verificar o funcionamento dos inf no python
+            self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
             self.flow_type.disturb[0].type = 'holdInlet'
@@ -2384,7 +2191,7 @@ class BoundaryConditions:
 
         ## Define flow region
         # Find which nodes will actually contain a flow and which ones will be in or at a wall
-        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) #essa função tem um comportamento diferente da função TRUE do matlab
+        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) 
         # Add flat plate
         wallJ = np.argmin(np.abs(self.mesh.Y))
         flowRegion[:, 0:wallJ+1, :] = False
@@ -2400,7 +2207,7 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
+                
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
 
         # Remove roughnesses from the flow
@@ -2611,7 +2418,7 @@ class BoundaryConditions:
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
             self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
-            self.flow_type.disturb[0].y = [-np.inf, np.inf] #Verificar o funcionamento dos inf no python
+            self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
             self.flow_type.disturb[0].type = 'holdInlet'
@@ -2877,7 +2684,7 @@ class BoundaryConditions:
 
         ## Define flow region
         # Find which nodes will actually contain a flow and which ones will be in or at a wall
-        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) #essa função tem um comportamento diferente da função TRUE do matlab
+        flowRegion = np.ones((self.mesh.nz, self.mesh.ny, self.mesh.nx)) 
         # Add flat plate
         wallJ = np.argmin(np.abs(self.mesh.Y))
         flowRegion[:, 0:wallJ+1, :] = False
@@ -2893,7 +2700,7 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
+                
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
 
         # Remove roughnesses from the flow
@@ -3058,7 +2865,7 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
+                
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
                 
         # Remove roughnesses from the flow
@@ -3206,7 +3013,7 @@ class BoundaryConditions:
                 mask_y = (self.mesh.Y > y[0]) & (self.mesh.Y < y[1])
                 mask_z = (self.mesh.Z > z[0]) & (self.mesh.Z < z[1])
 
-                # Usar numpy.ix_ para aplicar as máscaras booleanas em múltiplas dimensões
+                
                 flowRegion[np.ix_(mask_z, mask_y, mask_x)] = True
         # Remove roughnesses from the flow
         if hasattr(self.flow_type,'rug'):
@@ -3359,76 +3166,47 @@ class BoundaryConditions:
         print(max(i))
         
         start_time = time.time()
-        #TODO: Melhorar a performance
-        #flowRegion[i, :, :] = flowRegion[i, :, :] | (flowRegion[i - 1, :, :] & flowRegion[i + 1, :, :])
-        #i = np.arange(1, self.mesh.nx - 1)
-        #flowRegion[:, :, i] = np.logical_or(flowRegion[:, :, i], np.logical_and(flowRegion[:, :, i - 1], flowRegion[:, :, i + 1]))
-#
-        ## in y (correspondente ao j em Matlab)
-        #j = np.arange(1, self.mesh.ny - 1)
-        #flowRegion[:, j, :] = np.logical_or(flowRegion[:, j, :] , np.logical_and(flowRegion[:, j - 1, :], flowRegion[:, j + 1, :]))
-#
-        ## in z (correspondente ao k em Matlab)
-        #k = np.arange(1, self.mesh.nz - 1)
-        ##flowRegion[:, :, k] = flowRegion[:, :, k] | (flowRegion[:, :, k - 1] & flowRegion[:, :, k + 1])
-        #flowRegion[k, :, :] = np.logical_or(flowRegion[k, :, :] , np.logical_and(flowRegion[k - 1, :, :] , flowRegion[k + 1, :, :]))
 
         flowRegion[:, :, 1:-1] = np.logical_or(flowRegion[:, :, 1:-1], 
                                        np.logical_and(flowRegion[:, :, :-2], flowRegion[:, :, 2:]))
 
-        # Otimiza a propagação em y
         flowRegion[:, 1:-1, :] = np.logical_or(flowRegion[:, 1:-1, :], 
                                                np.logical_and(flowRegion[:, :-2, :], flowRegion[:, 2:, :]))
         
-        # Otimiza a propagação em z
         flowRegion[1:-1, :, :] = np.logical_or(flowRegion[1:-1, :, :], 
                                        np.logical_and(flowRegion[:-2, :, :], flowRegion[2:, :, :]))
 
-        # Criando as paredes
-        #wallFront = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
         wallFront = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallFront[: , :, 0:-1] = np.diff(flowRegion.astype(int), axis=2) == 1
 
-        #wallBack = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
         wallBack = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallBack[:, :, 1:] = np.diff(flowRegion.astype(int), axis=2) == -1
 
-        #wallUp = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
         wallUp = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallUp[:, :-1, :] = np.diff(flowRegion.astype(int), axis=1) == 1
 
-        #wallDown = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
         wallDown = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallDown[:, 1:, :] = np.diff(flowRegion.astype(int), axis=1) == -1
 
-        #wallRight = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
         wallRight = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallRight[:-1, :, :] = np.diff(flowRegion.astype(int), axis=0) == 1
 
-        #wallLeft = np.zeros((self.mesh.nx, self.mesh.ny, self.mesh.nz), dtype=bool)
         wallLeft = np.zeros((self.mesh.nz, self.mesh.ny, self.mesh.nx), dtype=bool)
         wallLeft[1:, :, :] = np.diff(flowRegion.astype(int), axis=0) == -1
 
         end_time = time.time()
         print('method:_findWallsForBoundaries')
-        print(f"Tempo de execução: {end_time - start_time:.2f} segundos")
-        # Encontra os limites das paredes para as fronteiras
-        #wallFrontLimits, wallBackLimits = self._find_wall_limits(self.mesh.nx, wallFront, wallBack, axis=2)
-        #wallUpLimits, wallDownLimits = self._find_wall_limits(self.mesh.ny, wallUp, wallDown, axis=1)
-        #wallRightLimits, wallLeftLimits = self._find_wall_limits(self.mesh.nz, wallRight, wallLeft)
+        print(f"Execution time: {end_time - start_time:.2f} seconds")
         wallFrontLimits, wallBackLimits, wallUpLimits, wallDownLimits, wallRightLimits, wallLeftLimits = self._find_wall_limits(wallFront, wallBack, wallUp, wallDown, wallRight, wallLeft)
 
 
-        # Mesclando paredes adjacentes
         wallFrontLimits = self._merge_adjacent_walls(wallFrontLimits)
         wallBackLimits = self._merge_adjacent_walls(wallBackLimits)
         wallUpLimits = self._merge_adjacent_walls(wallUpLimits)
         wallDownLimits = self._merge_adjacent_walls(wallDownLimits)
 
-        # Encontrando os cantos (com duas ou três paredes)
         corners = self._find_corners(wallFront, wallBack, wallUp, wallDown, wallRight, wallLeft)
 
-        # Encontrando regiões completamente contidas dentro das paredes
         insideWalls = self._find_inside_walls(flowRegion)
 
         return np.array(wallFrontLimits), np.array(wallBackLimits), np.array(wallUpLimits), np.array(wallDownLimits), np.array(wallRightLimits), np.array(wallLeftLimits), insideWalls, corners
@@ -3559,92 +3337,6 @@ class BoundaryConditions:
         
         return wallFrontLimits, wallBackLimits, wallUpLimits, wallDownLimits, wallRightLimits, wallLeftLimits
 
-
-    def _find_wall_limits22(self, wallFront, wallBack, wallUp, wallDown, wallRight, wallLeft):
-        # Limites de cada tipo de parede
-        wallFrontLimits = []
-        wallBackLimits = []
-        wallUpLimits = []
-        wallDownLimits = []
-        wallRightLimits = []
-        wallLeftLimits = []
-
-        # Função auxiliar para processar as paredes (frontal/traseira, superior/inferior, direita/esquerda)
-        def process_wall(wallType, axis, limits, nx_or_ny):
-            for i in range(nx_or_ny):
-                localWall = np.take(wallType, i, axis=axis)  # Acessa como 2D
-                if np.any(localWall):
-                    wallStarts = []
-                    wallEnds = []
-                    kStart = 0
-                    for k in range(self.mesh.nz):
-                        diffWall = np.diff(localWall[k, :], axis=0)
-
-                        # Identificar os pontos de início e fim da parede (mudança de 0 para 1 e 1 para 0)
-                        wallStarts = np.where(np.concatenate(([localWall[k, 0]], diffWall == 1)))[0]
-                        wallEnds = np.where(np.concatenate((diffWall == -1, [localWall[k, -1]])))[0]
-
-                        if k == 0 or not wallStarts.size:
-                            kStart = k
-
-                        if k == self.mesh.nz - 1 or np.any(localWall[k, :] != localWall[k + 1, :]):
-                            for j in range(len(wallStarts)):
-                                limits.append([i, i, wallStarts[j], wallEnds[j], kStart, k])
-                            wallStarts = []
-                            wallEnds = []
-
-        # Processando as paredes frontais e traseiras
-        process_wall(wallFront, axis=2, limits=wallFrontLimits, nx_or_ny=self.mesh.nx)
-        process_wall(wallBack, axis=2, limits=wallBackLimits, nx_or_ny=self.mesh.nx)
-
-        # Processando as paredes superiores e inferiores
-        process_wall(wallUp, axis=1, limits=wallUpLimits, nx_or_ny=self.mesh.ny)
-        process_wall(wallDown, axis=1, limits=wallDownLimits, nx_or_ny=self.mesh.ny)
-
-        # Processando as paredes direita e esquerda
-        process_wall(wallRight, axis=0, limits=wallRightLimits, nx_or_ny=self.mesh.nz)
-        process_wall(wallLeft, axis=0, limits=wallLeftLimits, nx_or_ny=self.mesh.nz)
-
-        # Retorna todas as variáveis de limite
-        return wallFrontLimits, wallBackLimits, wallUpLimits, wallDownLimits, wallRightLimits, wallLeftLimits
-    
-    
-    
-    
-    
-    def _find_wall_limits2(self, size, wall1, wall2, axis=0):
-        wallLimits1 = []
-        wallLimits2 = []
-
-        for i in range(size):
-            localWall = wall1.take(i, axis=axis)  # Correspondente ao wallFront(i,:,:) no Matlab
-            if np.any(localWall):
-                wallLimits1 += self._get_wall_limits(localWall, i, axis)
-
-            localWall = wall2.take(i, axis=axis)  # Correspondente ao wallBack(i,:,:) no Matlab
-            if np.any(localWall):
-                wallLimits2 += self._get_wall_limits(localWall, i, axis)
-
-        return wallLimits1, wallLimits2
-
-    def _get_wall_limits2(self, localWall, i, axis):
-        wallLimits = []
-        wallStarts = np.where([localWall.take(0, axis=axis)] + np.diff(localWall, axis=axis) == 1)[0]
-        wallEnds = np.where([np.diff(localWall, axis=axis) == -1] + [localWall.take(-1, axis=axis)])[0]
-
-        kStart = 0
-        for k in range(localWall.shape[axis]):
-            if k == 0 or not wallStarts:
-                wallStarts = np.where([localWall.take(0, axis=axis)] + np.diff(localWall, axis=axis) == 1)[0]
-                wallEnds = np.where([np.diff(localWall, axis=axis) == -1] + [localWall.take(-1, axis=axis)])[0]
-                kStart = k
-            if k == localWall.shape[axis] - 1 or np.any(localWall != localWall.take(k + 1, axis=axis)):
-                for start, end in zip(wallStarts, wallEnds):
-                    wallLimits.append([i, i, start, end, kStart, k])
-                wallStarts = []
-                wallEnds = []
-        return wallLimits
-
     def _merge_adjacent_walls(self, wallLimits):
         done = False
         while not done:
@@ -3677,7 +3369,7 @@ class BoundaryConditions:
         corners_matrix[:, :, :, 3] = wallBack & wallDown
         corner_directions = np.array([[1, 1, 0], [1, -1, 0], [-1, 1, 0], [-1, -1, 0]])
         
-        #TODO: Melhorar a performance
+        #TODO: Increase performance
         start_time = time.time()
         for i in range(self.mesh.nx):
             for j in range(self.mesh.ny):
@@ -3750,7 +3442,7 @@ class BoundaryConditions:
 
         end_time = time.time()
         print('method:_find_corners')
-        print(f"Tempo de execução: {end_time - start_time:.2f} segundos")
+        print(f"Execution time: {end_time - start_time:.2f} seconds")
 
         return corners
 
@@ -3778,76 +3470,6 @@ class BoundaryConditions:
             inverse.append(unique_rows[key])
         return inverse
 
-    def _sort_and_merge_walls4(self, insideWalls):
-        if len(insideWalls) > 0:
-        
-            # Get indices based on first two columns
-            indices = self._get_unique_indices(insideWalls[:, [0, 1]])
-        
-            # Sort by indices
-            sort_indices = sorted(range(len(indices)), key=lambda k: indices[k])
-            insideWalls = insideWalls[sort_indices]
-        
-            # Merge limits in y
-            i = 0
-            while i < len(insideWalls) - 1:
-                if (all(insideWalls[i, [0,1,4,5]] == insideWalls[i+1, [0,1,4,5]]) and 
-                    insideWalls[i, 3] + 1 == insideWalls[i+1, 2]):
-                    insideWalls[i, 3] = insideWalls[i+1, 3]
-                    insideWalls = np.delete(insideWalls, i+1, axis=0)
-                else:
-                    i += 1
-
-            # Merge limits in z
-            i = 0
-            while i < len(insideWalls) - 1:
-                if (all(insideWalls[i, [0,1,2,3]] == insideWalls[i+1, [0,1,2,3]]) and 
-                    insideWalls[i, 5] + 1 == insideWalls[i+1, 4]):
-                    insideWalls[i, 5] = insideWalls[i+1, 5]
-                    insideWalls = np.delete(insideWalls, i+1, axis=0)
-                else:
-                    i += 1
-
-        return insideWalls
-    def _sort_and_merge_walls3(self, insideWalls):
-        if len(insideWalls) > 0:
-            # Sort by wall limits
-            _, unique_indices = np.unique(insideWalls[:, [0, 1]], axis=0, return_inverse=True)
-            sort_indices = np.argsort(unique_indices)
-            insideWalls = insideWalls[sort_indices]
-        
-            # Merge limits in y
-            i = 0
-            while i < len(insideWalls) - 1:
-                if (np.array_equal(insideWalls[i, [0, 1, 4, 5]], insideWalls[i+1, [0, 1, 4, 5]]) and 
-                    insideWalls[i, 3] + 1 == insideWalls[i+1, 2]):
-                    insideWalls[i, 3] = insideWalls[i+1, 3]
-                    insideWalls = np.delete(insideWalls, i+1, axis=0)
-                else:
-                    i += 1
-
-            # Merge limits in z
-            i = 0
-            while i < len(insideWalls) - 1:
-                if (np.array_equal(insideWalls[i, [0, 1, 2, 3]], insideWalls[i+1, [0, 1, 2, 3]]) and 
-                    insideWalls[i, 5] + 1 == insideWalls[i+1, 4]):
-                    insideWalls[i, 5] = insideWalls[i+1, 5]
-                    insideWalls = np.delete(insideWalls, i+1, axis=0)
-                else:
-                    i += 1
-
-            return insideWalls
-
-    def _sort_and_merge_walls2(self, insideWalls):
-        if np.array(insideWalls).size > 0:
-            insideWalls = np.array(insideWalls)
-            unique_rows, ind = np.unique(insideWalls[:, [0]], axis=0, return_inverse=True)
-            ind +=1
-            ind[0]-=1
-            sorted_indices = np.argsort(ind)
-            insideWalls = insideWalls[sorted_indices, :]
-        return self._merge_walls_by_dimension(insideWalls)
-
     def _sort_and_merge_walls2(self, insideWalls):
         if np.array(insideWalls).size > 0:
             dic = {}; idxs = []; idx = 0
@@ -3861,19 +3483,12 @@ class BoundaryConditions:
                 else:
                     idxs.append(dic[tuple(l[[0, 1]])])
 
-        return insideWalls[np.argsort(idxs, stable=True), :] 
-        # return insideWalls[np.argsort(idxs, kind='stable'), :] # Alternativa caso a versão acima não tiver disponível.
+        return insideWalls[np.argsort(idxs, kind='stable'), :] 
 
     def _sort_and_merge_walls(self, insideWalls):
         insideWalls = self._sort_and_merge_walls2(insideWalls)
         insideWalls = self._merge_walls_by_dimension(insideWalls)
         return insideWalls
-    
-        if np.array(insideWalls).size > 0:
-            insideWalls = np.array(insideWalls)
-            unique_rows, ind, ind2 = np.unique(insideWalls[:, [0, 1]], axis=0, return_index=True, return_inverse=True)
-            insideWalls = insideWalls[np.sort(ind), :]
-        return np.array(insideWalls)
 
     def _merge_walls_by_dimension(self, insideWalls):
         i = 0
@@ -4124,7 +3739,7 @@ class BoundaryConditions:
             boundary_data['zi'][i],
             boundary_data['zf'][i]
         ]
-    #TODO: Revisar a implementação deste método
+
     def split_boundaries(self, domain_slices_y, domain_slices_z, p_row, p_col):
         for j in range(p_row):
             for k in range(p_col):

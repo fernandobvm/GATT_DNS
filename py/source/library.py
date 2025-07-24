@@ -3,9 +3,11 @@ import re
 import copy
 import numpy as np
 import h5py
-from scipy.interpolate import interp1d, RegularGridInterpolator, PchipInterpolator, CubicSpline, splrep, splev
+from scipy.interpolate import interp1d, RegularGridInterpolator, PchipInterpolator, CubicSpline, splrep, splev, interpn
 from scipy.integrate import odeint, simpson 
 from scipy.io import loadmat
+from scipy.io import savemat
+from scipy.ndimage import map_coordinates
 
 
 ########## CLASSES
@@ -25,24 +27,10 @@ class Mesh:
         self.Y = 0    # Y coordinates of the mesh
         self.Z = 0    # Z coordinates of the mesh
         
-
-    def generateMesh(self, domain):
-        #TODO: implementar este método, ele é utilizado no preprocessing.m
-        self.nx = 0  # number of grid points in x
-        self.ny = 0  # number of grid points in y
-        self.nz = 0  # number of grid points in z
-        self.X = 0    # X coordinates of the mesh
-        self.Y = 0    # Y coordinates of the mesh
-        self.Z = 0    # Z coordinates of the mesh
-        #extra_refinement é um objeto do meshAxis
-        #trackedNorm = tracked_norm
-        #trackedPoint = tracked_points
     def generate_mesh(self, xi, xf, direction):
-        # Gerar malha arbitrária se o número de nós não for definido
         mesh_dir = getattr(self, direction.lower())
         d0 = getattr(mesh_dir, "d0")
         if mesh_dir.n is None:
-            #mesh_temp = Mesh()
             mesh_temp = copy.deepcopy(self)
             
             mesh_temp2 = getattr(mesh_temp, direction.lower())
@@ -57,7 +45,6 @@ class Mesh:
             d_base = np.max(np.diff(Xtemp))
             mesh_dir.n = np.ceil(mesh_temp2.n * d_base / d0).astype(int)
 
-        # Definir número de nós para zonas tampão
         if mesh_dir.buffer_i.n is None or mesh_dir.buffer_f.n is None:
             mesh_temp = copy.deepcopy(self)
             mesh_temp2 = getattr(mesh_temp, direction.lower())
@@ -80,38 +67,31 @@ class Mesh:
                 mesh_dir.buffer_f.n = np.floor(target / d_base).astype(int)
                 self._adjust_buffer_zone('f', target, d_base)
 
-        # Se a malha for um único ponto
         if mesh_dir.n == 1:
             mesh_dir.type = 'uniform'
 
-        # Remover zona tampão para dimensões periódicas
         if mesh_dir.periodic and (mesh_dir.buffer_i.n > 0 or mesh_dir.buffer_f.n > 0):
             print(f"Warning: Buffer zone was removed for periodic dimension {direction}")
             mesh_dir.buffer_i.n = 0
             mesh_dir.buffer_f.n = 0
 
-        # Adicionar nó temporário se necessário
         added_temp_node = False
         if mesh_dir.periodic and mesh_dir.fix_periodic_domain_size and mesh_dir.n > 1 and mesh_dir.type != 'file':
             mesh_dir.n += 1
             added_temp_node = True
 
-        # Contar nós
         nx = mesh_dir.n + mesh_dir.buffer_i.n + mesh_dir.buffer_f.n
         physical_start = mesh_dir.buffer_i.n
-        physical_end = mesh_dir.buffer_i.n + mesh_dir.n
+        physical_end = mesh_dir.buffer_i.n + mesh_dir.n - 1
 
-        # Computar domínio físico
         X_physical = self._compute_physical_domain(mesh_dir, xi, xf)
 
-        # Ajustar pontos fixos como cavidades
         if mesh_dir.match_fixed and mesh_dir.n > 1:
             X_physical = self._match_fixed_points(mesh_dir, X_physical)
 
         X = np.zeros(nx)
-        X[physical_start:physical_end] = X_physical
+        X[physical_start:physical_end+1] = X_physical
 
-        # Adicionar zonas tampão
         if mesh_dir.buffer_i.n > 0:
             base_dist = X[physical_start + 1] - X[physical_start]
             XB = self._calc_buffer_zone(mesh_dir.buffer_i) * base_dist
@@ -120,13 +100,11 @@ class Mesh:
         if mesh_dir.buffer_f.n > 0:
             base_dist = X[physical_end - 1] - X[physical_end - 2]
             XB = self._calc_buffer_zone(mesh_dir.buffer_f) * base_dist
-            X[physical_end:] = X[physical_end - 1] + XB
+            X[physical_end + 1:] = X[physical_end] + XB
 
-        # Adicionar refinamento extra
         if mesh_dir.extra_refinement > 0:
             X = self._add_extra_refinement(mesh_dir, X)
 
-        # Remover nó temporário
         if added_temp_node:
             X = X[:-1]
             mesh_dir.n -= 1
@@ -208,8 +186,6 @@ class Mesh:
             eta[-1] = mesh_dir.n
             
             # Interpolate to find physical nodes
-            print('interpolate 1')
-            #XPhysical = interp1d(eta, xBase, kind='spline')(np.arange(1, mesh_dir.n + 1))
             XPhysical = CubicSpline(eta, xBase)(np.arange(1, mesh_dir.n + 1))
         
         elif mesh_dir.type == 'attractors_old':
@@ -226,8 +202,6 @@ class Mesh:
             eta[-1] = mesh_dir.n
             
             # Interpolate to find physical nodes
-            print('interpolate 2')            
-            #XPhysical = interp1d(eta, xBase, kind='spline')(np.arange(1, mesh_dir.n + 1))
             XPhysical = CubicSpline(eta, xBase)(np.arange(1, mesh_dir.n + 1))
 
         
@@ -256,7 +230,6 @@ class Mesh:
         return XPhysical
 
     def _adjust_buffer_zone(self, zone, target, d_base):
-        #zone_data = self.buffer[zone]
         zone_data = getattr(self, 'buffer_' + zone)
         XB = self._calc_buffer_zone(zone_data)
         value = XB[-1] * d_base
@@ -279,7 +252,7 @@ class Mesh:
             else:
                 delta = np.ones(par.n)
                 for i in range(1, par.n):
-                    stretching = 1 + min(1, i / par.ramp) * par.stretching
+                    stretching = 1 + min(1, (i+1) / par.ramp) * par.stretching
                     delta[i] = delta[i - 1] * stretching
                 XB = np.cumsum(delta)
         elif par.type == 'sigmoid':
@@ -303,12 +276,8 @@ class Mesh:
 
         print('interpolate 3')
         if mesh_dir.match_fixed == 2:
-            print('interpolate 3.1')
             X_physical -= PchipInterpolator(closest_nodes, X_physical[closest_nodes] - fix_points)(np.arange(mesh_dir.n))
         else:
-            print('interpolate 3.2')
-            #X_physical -= interp1d(closest_nodes, X_physical[closest_nodes] - fix_points, kind='spline')(np.arange(mesh_dir.n))
-            # X_physical -= CubicSpline(closest_nodes, X_physical[closest_nodes] - fix_points)(np.arange(mesh_dir.n))
             X_physical -= CubicSpline(closest_nodes, X_physical[closest_nodes] - fix_points, bc_type='not-a-knot')(np.arange(mesh_dir.n))
 
         X_physical[closest_nodes] = fix_points
@@ -330,28 +299,23 @@ class Mesh:
         Xfiner[-1] = X[-1]
         return Xfiner
 
-    #meshAddFixedPoints
     def add_fixed_points(self, flow_type, domain):
-        # Inicializar os fixPoints como em MATLAB
         self.x.fixPoints = [0]
         self.y.fixPoints = [0]
         self.z.fixPoints = []
 
-        # Verificar se cavidades existem e adicionar pontos fixos
         if hasattr(flow_type, 'cav'):
             for cav in flow_type.cav:
                 self.x.fixPoints.extend(cav.x)
                 self.y.fixPoints.extend(cav.y)
                 self.z.fixPoints.extend(cav.z)
 
-        # Verificar se rugosidades existem e adicionar pontos fixos
         if hasattr(flow_type, 'rug'):
             for rug in flow_type.rug:
                 self.x.fixPoints.extend(rug.x)
                 self.y.fixPoints.extend(rug.y)
                 self.z.fixPoints.extend(rug.z)
 
-        # Verificar se distúrbios existem e adicionar pontos fixos
         if hasattr(flow_type, 'disturb'):
             for disturb in flow_type.disturb:
                 if hasattr(disturb, 'fitPoints') and disturb.fitPoints:
@@ -366,26 +330,24 @@ class Mesh:
                     if hasattr(disturb, 'fitPointsZ') and disturb.fitPointsZ:
                         self.z.fixPoints.extend(disturb.z)
 
-        # Verificar se trackedPoints estão definidos e ajustar seus pontos
         if hasattr(self, 'tracked_points') and self.fit_tracked_points:
             for tracked_point in self.tracked_points:
                 self.x.fixPoints.append(tracked_point[0])
                 self.y.fixPoints.append(tracked_point[1])
                 self.z.fixPoints.append(tracked_point[2])
 
-        # Remover duplicados nos fixPoints
         self.x.fixPoints = list(np.unique(self.x.fixPoints))
         self.y.fixPoints = list(np.unique(self.y.fixPoints))
         self.z.fixPoints = list(np.unique(self.z.fixPoints))
 
-        # Remover pontos fora do domínio ou com valor infinito
         self.x.fixPoints = [p for p in self.x.fixPoints if not np.isinf(p) and domain.xi <= p <= domain.xf]
         self.y.fixPoints = [p for p in self.y.fixPoints if not np.isinf(p) and domain.yi <= p <= domain.yf]
         self.z.fixPoints = [p for p in self.z.fixPoints if not np.isinf(p) and domain.zi <= p <= domain.zf]
-#class MeshAxis:
-#    def __init__(self, axisType, axisValues):
-#        self.axisType = axisType  # Type of axis (e.g., 'X', 'Y', 'Z')
-#        self.axisValues = axisValues  # Values along the axis
+
+    def save_probs(self, case_name, path_to_save):
+        np.save(f'{path_to_save}/{case_name}_probs.npy', self.tracked_points)
+        savemat(f'{path_to_save}/{case_name}_probs.mat', {"probs": self.tracked_points})
+
 class MeshAxis:
     def __init__(self):
         self.type = 'attractors'
@@ -427,12 +389,12 @@ class Domain:
 
 class Time:
     def __init__(self, dt, max_cfl,  control, qtimes, tmax, nStep = None, CFLignoreZ=False):
-        self.dt = dt                # time step size
-        self.tmax = tmax            # max time value
-        self.nStep = nStep          # number of steps for saving data | usado no checkPreviousRun.m
-        self.max_cfl = max_cfl      # max CFL number
-        self.qtimes = qtimes        # query times for controlling time
-        self.control = control      # control type ('dt' or 'cfl')
+        self.dt = dt                  # time step size
+        self.tmax = tmax              # max time value
+        self.nStep = nStep            # number of steps for saving data | usado no checkPreviousRun.m
+        self.max_cfl = max_cfl        # max CFL number
+        self.qtimes = qtimes          # query times for controlling time
+        self.control = control        # control type ('dt' or 'cfl')
         self.CFLignoreZ = CFLignoreZ  # flag to ignore CFL condition in Z direction
 
 
@@ -503,12 +465,6 @@ class Disturbance:
         self.X = None
         self.Y = None
         self.Z = None
-class Disturbances:
-    def __init__(self, disturbanceType, amplitude, frequency, phase):
-        self.disturbanceType = disturbanceType  # Type of disturbance (e.g., acoustic, entropy, etc.)
-        self.amplitude = amplitude  # Amplitude of the disturbance
-        self.frequency = frequency  # Frequency of the disturbance
-        self.phase = phase  # Phase shift of the disturbance
 
 class Cavity:
     def __init__(self, x_range, y_range, z_range, cavityDepth = None, cavityWidth = None, cavityLocation = None):
@@ -546,7 +502,6 @@ class FlowType:
         self.flowRegime = flowRegime  # Regime of the flow (laminar, turbulent, etc.)
         
 class Buffer:
-    # TODO: Conferir esse valor 0.2 para transition, talvez devesse ser None.
     def __init__(self, n=0, buffer_type='sigmoid', stretching=None, transition=None, ramp=None, bufferSize = None, bufferType = None):
         self.n = n
         self.type = buffer_type
@@ -555,10 +510,6 @@ class Buffer:
         self.ramp = ramp
         self.bufferSize = bufferSize  # Size of the buffer zone
         self.bufferType = bufferType  # Type of buffer zone (e.g., sponge, absorbing)
-    
-    def apply_buffer(self):
-        # Implement the logic to apply the buffer to the mesh
-        pass
 
 class MeshBuffer:
     def __init__(self, n, buffer_type, stretching, transition):
@@ -566,11 +517,6 @@ class MeshBuffer:
         self.type = buffer_type
         self.stretching = stretching
         self.transition = transition
-class MeshBuffer:
-    def __init__(self, mesh, buffer):
-        self.mesh = mesh  # Mesh object
-        self.buffer = buffer  # Buffer object associated with the mesh
-
 
 class Flow:
     def __init__(self, U, V, W, R, E):
@@ -583,8 +529,7 @@ class Flow:
 
 ######### FUNCTIONS
 
-#Should be working fine | Used in getMatrixTypeBlocks.m, preprocessing.m, calcInstability.m
-def get_domain_slices2(n, p):
+def get_domain_slices(n, p):
     """
     This function computes the size of each slice the same way the 2decomp library does.
     It is used to correctly distribute the info across the processes.
@@ -592,39 +537,6 @@ def get_domain_slices2(n, p):
     extra nodes are placed first in the last slices.
     For example, if 10 nodes are divided across 3 slices, the division would be 3, 3, 4.
     """
-    if n == 1:
-        # If n is 1, there's only one slice from index 0 to 0 in Python indexing
-        return np.array([[0], [0]])
-
-    # Compute base size for each slice
-    nPointsBase = n // p
-    nCeil = n - nPointsBase * p
-
-    # Initialize nPoints with base size
-    nPoints = np.ones(p, dtype=int) * nPointsBase
-
-    # Distribute extra nodes to the last slices
-    nPoints[-nCeil:] += 1
-
-    # Compute cumulative sum to get the ending indices of slices
-    slices_end = np.cumsum(nPoints)
-
-    # The starting index of the first slice is 0 (Python index starts at 0)
-    slices_start = np.zeros(p, dtype=int)
-    slices_start[1:] = slices_end[:-1] + 1
-
-    # Combine start and end indices into a 2D array (rows: [start, end])
-    slices = np.vstack((slices_start, slices_end - 1))  # Adjusted to 0-indexing
-
-    return slices
-
-
-def get_domain_slices(n, p):
-    # Esta função calcula o tamanho de cada fatia da mesma forma que a biblioteca 2decomp faz
-    # É usada para distribuir corretamente as informações entre os processos
-    # A distribuição é a mais uniforme possível. Se uma distribuição desigual for necessária, 
-    # os nós extras são colocados primeiro nas últimas fatias
-    # Por exemplo, se 10 nós são divididos em 3 fatias, a divisão seria 3 3 4
     
     if n == 1:
         return np.array([[1], [1]])
@@ -690,7 +602,7 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
 
     elif initialFlow.initial_type == 'blasius':
         ybl = np.arange(0, 10, 0.0001)
-        ubl = blasius(ybl)  # Assumindo que a função blasius já está definida externamente
+        ubl = blasius(ybl)
         thetabl = 0.664155332943009
 
         R = np.ones((nx, ny, nz))
@@ -718,9 +630,7 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
             xi = X[i]
             if xi > 0:
                 theta = 0.664 * np.sqrt(xi / Re)
-                # U_interp = interp1d(ybl*theta/thetabl + Y0[i], ubl, kind='cubic', bounds_error=False, fill_value='extrapolate')
                 U_interp = CubicSpline(ybl*theta/thetabl + Y0[i], ubl, bc_type='not-a-knot')
-                # U(i,:) =     interp1(ybl*theta/thetabl + Y0(i), ubl, Y(1:end), 'spline')';
                 U[i, :] = U_interp(Y)
                 U[i, Y < Y0[i]] = 0
 
@@ -737,18 +647,17 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
 
     elif initialFlow.initial_type == 'file':
         if initialFlow.initial_flowFile.endswith('/'):
-            nStep = checkPreviousRun(initialFlow.initial_flowFile[:-1])  # Assumindo que checkPreviousRun já está definido
+            nStep = checkPreviousRun(initialFlow.initial_flowFile[:-1])
             if nStep is not None:
                 initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}flow_{nStep:010d}.h5"
             else:
                 initialFlow.initial_flowFile = f"{initialFlow.initial_flowFile}baseflow.npy"
 
-        # TODO: Verificar se tem de tratar múltiplos tipos de arquivos aqui.
         elif initialFlow.initial_flowFile.endswith(('.h5','.mat')):
             try:
-                print('lendo flowFile com h5py')
                 with h5py.File(initialFlow.initial_flowFile,'r') as file:
                     flowFile = {key: file[key][()] for key in file.keys() if key in file}
+                print('lendo flowFile com h5py')
             except:
                 data = loadmat(initialFlow.initial_flowFile)
                 X = next((data[key] for key in ['U', 'V', 'W', 'R', 'E', 't'] if key in data), None)
@@ -759,22 +668,22 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
             if initialFlow.initial_meshFile.endswith('/'):
                 initialFlow.initial_meshFile = f"{initialFlow.initial_meshFile}mesh.h5"
 
-            # TODO: Verificar se tem de tratar múltiplos tipos de arquivos aqui.
             possible_keys = ["X", "Y", "Z"]
             if initialFlow.initial_meshFile.endswith('.npy'):
-                meshFile = np.load(initialFlow.initial_meshFile)  # Load .npy file directly
+                meshFile = np.load(initialFlow.initial_meshFile)
             
                 if len(meshFile.shape) == 1:
-                    meshFile = meshFile.reshape(1, -1)  # Ensure correct shape
+                    meshFile = meshFile.reshape(1, -1)
                 
             elif initialFlow.initial_meshFile.endswith(('.h5','.mat')):
                 try:
-                    print('lendo meshFile com h5py')
-                    #with h5py.File(initialFlow.initial_meshFile,'r') as file:
-                    #    meshFile = next((file[key][()] for key in possible_keys if key in file), None).T
+                    
                     with h5py.File(initialFlow.initial_meshFile, 'r') as file:
-                        if all(key in file for key in ['X', 'Y', 'Z']):
-                            Xfile, Yfile, Zfile = file['X'][()], file['Y'][()], file['Z'][()]
+                        if all(key in file for key in possible_keys):
+                            #Xfile, Yfile, Zfile = file['X'][()], file['Y'][()], file['Z'][()]
+                            meshFile = {key: file[key][()] for key in file.keys() if key in possible_keys}
+                            print('lendo meshFile com h5py')
+                            Xfile, Yfile, Zfile = meshFile['X'][:,np.newaxis].transpose(), meshFile['Y'][:,np.newaxis].transpose(), meshFile['Z'][:,np.newaxis].transpose()
                         else:
                             raise KeyError("X, Y, or Z not found in the HDF5 file")
                 except:
@@ -785,7 +694,7 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
             else:
                 print("Mesh format not supported. Please provide a .npy, .mat or .h5 file.")
 
-            Ufile, Vfile, Wfile, Rfile, Efile = flowFile['U'], flowFile['V'], flowFile['W'], flowFile['R'], flowFile['E']
+            Ufile, Vfile, Wfile, Rfile, Efile = flowFile['U'].squeeze(), flowFile['V'].squeeze(), flowFile['W'].squeeze(), flowFile['R'].squeeze(), flowFile['E'].squeeze()
 
             Ufile[np.isnan(Ufile)] = 0
             Vfile[np.isnan(Vfile)] = 0
@@ -799,18 +708,24 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
             Ymesh = np.clip(Ymesh, Yfile[0][0], Yfile[0][-1])
             Zmesh = np.clip(Zmesh, Zfile[0][0], Zfile[0][-1])
 
-            if nz == 1 or len(Zfile) == 1:
+            print("Before RegularGrid")
+
+            if nz == 1 or Zfile.shape[1] == 1:
+                print("2D")
                 U = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Ufile.T)(np.array([Xmesh, Ymesh]).T).T
                 V = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Vfile.T)(np.array([Xmesh, Ymesh]).T).T
                 W = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Wfile.T)(np.array([Xmesh, Ymesh]).T).T
                 R = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Rfile.T)(np.array([Xmesh, Ymesh]).T).T
                 E = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze()), Efile.T)(np.array([Xmesh, Ymesh]).T).T
             else:
+                print("3D")
                 U = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Ufile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
                 V = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Vfile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
                 W = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Wfile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
                 R = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Rfile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
                 E = RegularGridInterpolator((Xfile.squeeze(), Yfile.squeeze(), Zfile.squeeze()), Efile.T)(np.array([Xmesh, Ymesh, Zmesh]).T).T
+
+            print("After RegularGrid")
 
             if initialFlow.initial_changeMach != None:
                 if meshFile['flowParameters']['Ma'] != Ma:
@@ -878,19 +793,13 @@ def generateInitialFlow(mesh, flowParameters, initialFlow, walls, flowName):
     return Flow(U, V, W, R, E)
 
 def blasius(y):
-    # Condições iniciais
     f0 = [0, 0, 0.33204312]
-
-    # Resolver a EDO usando odeint
     sol = odeint(blasius_eq, f0, y)
-
-    # Extrair a segunda coluna da solução
     u = sol[:, 1]
     
     return u
 
 def blasius_eq(f, t):
-    # Definir o sistema de equações
     dfdt = np.zeros(3)
     dfdt[2] = -0.5 * f[0] * f[2]
     dfdt[1] = f[2]
@@ -899,23 +808,19 @@ def blasius_eq(f, t):
     return dfdt
 
 def calcCompressibleBL(flowParameters, adiabWall, mesh):
-    # Parâmetros de fluxo
     Re = flowParameters.Re
     Minf = flowParameters.Ma
     Pr = flowParameters.Pr
     Tinf = flowParameters.T0
     gamma = flowParameters.gamma
 
-    # Variáveis auxiliares
-    xR = Re / 1.7208**2  # Referência de x
+    xR = Re / 1.7208**2
     E0 = 1 / (gamma * (gamma - 1) * Minf**2)
     
-    # Temperatura da parede
     Twall = 1
     if hasattr(flowParameters, 'Twall'):
         Twall = flowParameters.Twall / Tinf
 
-    # Resolver camada limite compressível
     sol = solve_compressibleBL(Minf, Pr, Tinf, Twall, gamma, adiabWall)
 
     eta_xR = sol.eta
@@ -924,7 +829,6 @@ def calcCompressibleBL(flowParameters, adiabWall, mesh):
     E_xR = sol.rbar * E0
     V_xR = -(sol.rbar) * (sol.f - eta_xR * sol.f_p) * (1.7208 / np.sqrt(2)) * (1 / Re)
 
-    # Calcular espessura da camada limite
     y_xR = eta_xR * np.sqrt(2) / 1.7208
     dS_xR = np.trapz(1 - U_xR * R_xR / (U_xR[-1] * R_xR[-1]), y_xR)
 
@@ -936,24 +840,20 @@ def calcCompressibleBL(flowParameters, adiabWall, mesh):
     
     print(f"BL thickness, (effective) / (incomp. BL, Blasius) = {dS_xR:.4f}")
 
-    # Parâmetros da malha
     X = mesh.X
     Y = mesh.Y
     Z = mesh.Z
     nx, ny, nz = len(X), len(Y), len(Z)
 
-    # Inicializar arrays de fluxo
     R = np.ones((nx, ny))
     U = np.ones((nx, ny))
     V = np.zeros((nx, ny))
     W = np.zeros((nx, ny))
     E = np.ones((nx, ny)) * E0
 
-    # Encontrar índices
     indX = np.where(X > 0)[0]
     indY = np.where(Y >= 0)[0]
 
-    print('interpolate 5')
     for ix in indX:
         y_xL = y_xR * np.sqrt(X[ix] / xR)
 
@@ -967,64 +867,52 @@ def calcCompressibleBL(flowParameters, adiabWall, mesh):
         R[ix, indY] = interp_R(Y[indY])
         E[ix, indY] = interp_E(Y[indY])
 
-    # Aplicar condições de contorno para Y < 0
     indY_neg = np.where(Y < 0)[0]
     U[:, indY_neg] = np.tile(U[:, Y == 0], (1, len(indY_neg)))
     V[:, indY_neg] = np.tile(V[:, Y == 0], (1, len(indY_neg)))
     R[:, indY_neg] = np.tile(R[:, Y == 0], (1, len(indY_neg)))
     E[:, indY_neg] = np.tile(E[:, Y == 0], (1, len(indY_neg)))
 
-    # Replicar para terceira dimensão Z
     U = np.tile(U[:, :, np.newaxis], (1, 1, nz))
     V = np.tile(V[:, :, np.newaxis], (1, 1, nz))
     W = np.tile(W[:, :, np.newaxis], (1, 1, nz))
     R = np.tile(R[:, :, np.newaxis], (1, 1, nz))
     E = np.tile(E[:, :, np.newaxis], (1, 1, nz))
     
-    class Flow:
-        def __init__(self,U, V, W, R, E):
-            self.U = U
-            self.V = V
-            self.W = W
-            self.R = R
-            self.E = E
-    # Retornar fluxo
+    
     return Flow(U, V, W, R, E)
 
-# Função para resolver a camada limite compressível
 def solve_compressibleBL(Minf, Pr, Tinf, Twall, Gamma, adiabWall):
-    C2 = 110  # Sutherland Coefficient [Kelvin]
-    lim = 10  # Simula lim -> inf
-    N = 500  # Número de pontos
-    h = lim / N  # Delta y
-    delta = 1e-10  # Número pequeno para o método de tiro
+    C2 = 110  
+    lim = 10
+    N = 500
+    h = lim / N
+    delta = 1e-10
     eps = 1e-9
 
     adi = 1 if adiabWall else 0
 
-    # Inicializando
     y1 = np.zeros(N + 1)  # f
     y2 = np.zeros(N + 1)  # f'
     y3 = np.zeros(N + 1)  # f''
     y4 = np.zeros(N + 1)  # rho(eta)
     y5 = np.zeros(N + 1)  # rho(eta)'
-    eta = custom_linspace(0, lim, N + 1)  # Iteração de eta até o infinito
+    eta = custom_linspace(0, lim, N + 1)  
 
-    # Condições de contorno e chute inicial
+    
     if adi == 1:
         y1[0] = 0
         y2[0] = 0
         y5[0] = 0
-        alfa0 = 0.1  # Chute inicial
-        beta0 = 3  # Chute inicial
+        alfa0 = 0.1  
+        beta0 = 3  
     else:
         y1[0] = 0
         y2[0] = 0
         y4[0] = Twall
-        alfa0 = 0.1  # Chute inicial
-        beta0 = 3  # Chute inicial
+        alfa0 = 0.1  
+        beta0 = 3 
 
-    # Método de tiro
     for _ in range(100000):
         if adi == 1:
             y1[0] = 0
@@ -1098,12 +986,10 @@ def solve_compressibleBL(Minf, Pr, Tinf, Twall, Gamma, adiabWall):
             Truey4 = y4[0]
             break
 
-    # Cálculo do eixo x usando simpson para interpolação
     xaxis = np.zeros_like(eta)
     for i in range(1, len(eta)):
         xaxis[i] = simpson(y4[:i+1], eta[:i+1])
 
-    # Criando a solução com uma classe
     class Solution:
         def __init__(self, eta, f, f_p, f_pp, rbar, rbar_p):
             self.eta = eta
@@ -1117,24 +1003,21 @@ def solve_compressibleBL(Minf, Pr, Tinf, Twall, Gamma, adiabWall):
     
     return sol
 
-# Método de Runge-Kutta de quarta ordem
 def RK(eta, h, y1, y2, y3, y4, y5, C2, Tinf, Minf, Pr, gamma):
     for i in range(len(eta) - 1):
-        # Cálculo das variáveis de Runge-Kutta
+        
         k11 = y2[i]
         k21 = y3[i]
         k31 = Y3(y1[i], y3[i], y4[i], y5[i], C2, Tinf)
         k41 = y5[i]
         k51 = Y5(y1[i], y3[i], y4[i], y5[i], C2, Tinf, Minf, Pr, gamma)
 
-        # Atualizações intermediárias
         k12 = y2[i] + 0.5 * h * k21
         k22 = y3[i] + 0.5 * h * k31
         k32 = Y3(y1[i] + 0.5 * h * k11, y3[i] + 0.5 * h * k31, y4[i] + 0.5 * h * k41, y5[i] + 0.5 * h * k51, C2, Tinf)
         k42 = y5[i] + 0.5 * h * k51
         k52 = Y5(y1[i] + 0.5 * h * k11, y3[i] + 0.5 * h * k31, y4[i] + 0.5 * h * k41, y5[i] + 0.5 * h * k51, C2, Tinf, Minf, Pr, gamma)
 
-        # Atualizações finais
         y5[i+1] = y5[i] + (1/6) * (k51 + 2 * k52 + 2 * k52 + k51) * h
         y4[i+1] = y4[i] + (1/6) * (k41 + 2 * k42 + 2 * k42 + k41) * h
         y3[i+1] = y3[i] + (1/6) * (k31 + 2 * k32 + 2 * k32 + k31) * h
@@ -1146,74 +1029,46 @@ def RK(eta, h, y1, y2, y3, y4, y5, C2, Tinf, Minf, Pr, gamma):
 def Y1(y2):
     return y2
 
-# Função Y2
 def Y2(y3):
     return y3
 
-# Função Y3
 def Y3(y1, y3, y4, y5, C2, Tinf):
     RHS = -y3 * ((y5 / (2 * y4)) - (y5 / (y4 + C2 / Tinf))) \
           - y1 * y3 * ((y4 + C2 / Tinf) / (y4**0.5 * (1 + C2 / Tinf)))
     return RHS
 
-# Função Y4
 def Y4(y5):
     return y5
 
-# Função Y5
 def Y5(y1, y3, y4, y5, C2, Tinf, Minf, Pr, Gamma):
     RHS = -y5**2 * ((0.5 / y4) - (1 / (y4 + C2 / Tinf))) \
           - Pr * y1 * y5 / y4**0.5 * (y4 + C2 / Tinf) / (1 + C2 / Tinf) \
           - (Gamma - 1) * Pr * Minf**2 * y3**2
     return RHS
 
-def checkPreviousRun(caseName):
-        """
-        Esta função verifica se há arquivos de execução anteriores.
-        caseName é a pasta a ser verificada.
-        nStep é o último passo de tempo encontrado.
-        nx, ny, e nz são os tamanhos da malha no arquivo salvo.
-        Se nenhum arquivo for encontrado, arrays vazios são retornados.
-
-        #TODO:A estrutura condicional nargout > 1 foi adaptada para Python com base em 
-        como o código lida com múltiplas saídas, e pode ser ajustada dependendo 
-        do contexto do código principal.
-
-        """
+def checkPreviousRun(case_path):
+        
         nStep = None
         nx = None
         ny = None
         nz = None
-        # Lista todos os arquivos no diretório
-        allFiles = os.listdir(caseName)
 
-        # Lista para armazenar os arquivos válidos
+        allFiles = os.listdir(case_path)
+
         caseFiles = []
 
-        # Procura por arquivos que correspondem ao padrão 'flow_*.npy'
         for name in allFiles:
             if len(name) == 18 and re.search(r'flow_\d*.h5', name):
                 caseFiles.append(name)
 
-        # Se nenhum arquivo for encontrado, retorna valores vazios
         if not caseFiles:
             return None, None, None, None
 
-        # Extrai o número de passos de tempo dos arquivos encontrados
         nSteps = [int(re.search(r'\d+', name).group()) for name in caseFiles]
 
-        # Encontra o maior passo de tempo
         nStep = max(nSteps)
 
-        #TODO: Aqui precisa ser aprimorado
-        # Se o número de saídas for maior que 1, carrega o arquivo e obtém as dimensões
-        #if hasattr(self, 'nargout') and self.nargout > 1:
-        #    file_path = os.path.join(caseName, f'flow_{nStep:010d}.npy')
-        #    fileObject = np.load(file_path, allow_pickle=True).item()
-        #    nx, ny, nz = fileObject['U'].shape
-        #    return nStep, nx, ny, nz
-        
-        file_path = os.path.join(caseName, f'flow_{nStep:010d}.h5')
+        file_path = os.path.join(case_path, f'flow_{nStep:010d}.h5')
         try:
             with h5py.File(file_path, 'r') as hdf5_file:
                 dataset_name = 'U'
@@ -1227,14 +1082,13 @@ def checkPreviousRun(caseName):
             a = 0
 
 
-        # Se não for necessário retornar as dimensões, apenas retorna o nStep
         return nStep, nx, ny, nz
 
 def custom_linspace(x, y, num):
     if num == 1:
-        return np.array([y])  # Retorna y em vez de x quando num = 1
+        return np.array([y])  
     else:
-        return np.linspace(x, y, num)  # Comportamento padrão para num > 1
+        return np.linspace(x, y, num)  
     
 def custom_range(N):
     if N > 1:

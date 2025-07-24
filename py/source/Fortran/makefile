@@ -2,7 +2,7 @@ FCOMP = mpifort
 ARGS = -ffree-line-length-0 
 # ARGS = -ffree-line-length-0 -lhdf5_fortran -lhdf5
 
-SOURCEFOLDER = ../../source/Fortran
+SOURCEFOLDER = ../../../source/Fortran
 
 include makefile_extra
 

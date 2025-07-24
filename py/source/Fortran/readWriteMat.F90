@@ -179,73 +179,102 @@ module readWriteMat
 		call h5close_f(error)
 	end subroutine
 
+	subroutine define_chunk_dims(dims, chunk_dims, dtype_size, target_bytes)
+		implicit none
+		integer(hsize_t), dimension(:), intent(in)  :: dims
+		integer(hsize_t), dimension(:), intent(out) :: chunk_dims
+		integer, intent(in) :: dtype_size
+		integer(hsize_t), intent(in) :: target_bytes
+
+		integer :: i, rank
+		integer(hsize_t) :: current_bytes, total_elements
+
+		rank = size(dims)
+		chunk_dims = dims
+
+		total_elements = 1
+		do i = 1, rank
+			total_elements = total_elements * chunk_dims(i)
+		end do
+		current_bytes = total_elements * dtype_size
+
+		do while (current_bytes > target_bytes)
+			do i = 1, rank
+			if (chunk_dims(i) > 1) chunk_dims(i) = max(1, chunk_dims(i) / 2)
+			end do
+			total_elements = 1
+			do i = 1, rank
+			total_elements = total_elements * chunk_dims(i)
+			end do
+			current_bytes = total_elements * dtype_size
+		end do
+
+	end subroutine
+
 	subroutine writeFlow(timeStep,t,U,V,W,R,E)
-		! DECLARE VARIABLES
 		implicit none
 
-		! Inputs
 		integer, intent(in) :: timeStep
 		real*8, intent(in) :: t
 		real*8, dimension(:,:,:), intent(in) :: U, V, W, R, E
 
-		! Internals
-		integer :: hdf_error
+		integer :: hdf_error, dtype_size
 		integer(hid_t) :: file_id, dataspace_id, dataset_id, plist_id
 		integer(hsize_t), dimension(3) :: dims, chunk_dims
 		integer(hsize_t), dimension(1) :: dims1
 		character(len=50) :: filename
 
-		! Initialize HDF5 interface
+		! Inicializa HDF5
 		call h5open_f(hdf_error)
 		if (hdf_error /= 0) then
-			print *, "Error initializing HDF5"
+			print *, "Erro ao iniciar HDF5"
 			return
 		endif
 
-		! GET DATA SIZE
 		dims = shape(U)
 		dims1(1) = 1
-		chunk_dims = dims / 2  ! Define um chunk menor para melhor compressão (ajustável)
 
-		! DEFINE FILE NAME
+		! Define chunk dinamicamente (target = 512 KB)
+		dtype_size = 8  ! double precision
+		call define_chunk_dims(dims, chunk_dims, dtype_size, 512_8*1024_8)
+
 		if (timeStep < 0) then
 			filename = "../flow_diverged.h5"
 		else
 			write(filename, '("../flow_", i10.10, ".h5")') timeStep
 		end if
 
-		! CREATE OR OPEN HDF5 FILE
 		call h5fcreate_f(trim(filename), H5F_ACC_TRUNC_F, file_id, hdf_error)
 
-		! WRITE SCALAR VARIABLE "t"
+		! Salva o escalar "t"
 		call h5screate_simple_f(1, dims1, dataspace_id, hdf_error)
 		call h5dcreate_f(file_id, "t", H5T_NATIVE_DOUBLE, dataspace_id, dataset_id, hdf_error)
 		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, t, dims1, hdf_error)
 		call h5dclose_f(dataset_id, hdf_error)
 		call h5sclose_f(dataspace_id, hdf_error)
 
-		! CREATE PROPERTY LIST FOR COMPRESSION
+		! Cria property list com compressão e chunk
 		call h5pcreate_f(H5P_DATASET_CREATE_F, plist_id, hdf_error)
-		call h5pset_chunk_f(plist_id, 3, chunk_dims, hdf_error)  ! Definir chunks
-		call h5pset_deflate_f(plist_id, 8, hdf_error)  ! Aplicar compressão Gzip nível 8
+		call h5pset_chunk_f(plist_id, 3, chunk_dims, hdf_error)
+		call h5pset_deflate_f(plist_id, 9, hdf_error)
 
-		! WRITE 3D VARIABLES WITH COMPRESSION
+		! Cria dataspace
 		call h5screate_simple_f(3, dims, dataspace_id, hdf_error)
+
+		! Salva variáveis
 		call write_compressed_dataset(file_id, "U", U, dataspace_id, plist_id, hdf_error)
 		call write_compressed_dataset(file_id, "V", V, dataspace_id, plist_id, hdf_error)
 		call write_compressed_dataset(file_id, "W", W, dataspace_id, plist_id, hdf_error)
 		call write_compressed_dataset(file_id, "R", R, dataspace_id, plist_id, hdf_error)
 		call write_compressed_dataset(file_id, "E", E, dataspace_id, plist_id, hdf_error)
+
 		call h5sclose_f(dataspace_id, hdf_error)
-
-		! CLOSE PROPERTY LIST
 		call h5pclose_f(plist_id, hdf_error)
-
-		! CLOSE HDF5 FILE
 		call h5fclose_f(file_id, hdf_error)
 		call h5close_f(hdf_error)
+
 	end subroutine
-	
+
 	subroutine write_compressed_dataset(file_id, name, data, dataspace_id, plist_id, hdf_error)
 		implicit none
 		integer(hid_t), intent(in) :: file_id, dataspace_id, plist_id
@@ -256,11 +285,11 @@ module readWriteMat
 		integer(hid_t) :: dataset_id
 
 		dims = shape(data)
-		
-		! Criar dataset com compressão
+
 		call h5dcreate_f(file_id, name, H5T_NATIVE_DOUBLE, dataspace_id, dataset_id, hdf_error, plist_id)
 		call h5dwrite_f(dataset_id, H5T_NATIVE_DOUBLE, data, dims, hdf_error)
 		call h5dclose_f(dataset_id, hdf_error)
+
 	end subroutine
 
 	subroutine readMeanFlow(U,V,W,R,E)
