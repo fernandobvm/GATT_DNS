@@ -1,0 +1,64 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    umask 0000  # Garante permissões de escrita para todos os usuários
+
+%files
+    etc/2decomp_fft /usr/local/2decomp_fft
+    source /home/dns/source
+    Simulation.py /home/dns/Simulation.py 
+
+%post
+    apt-get update && \
+    apt-get install -y software-properties-common build-essential wget && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # Install GCC 9.4.0
+    add-apt-repository ppa:ubuntu-toolchain-r/test && \
+    apt-get update && \
+    apt-get install -y gcc-9 g++-9 gfortran-9-multilib && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90 && \
+    update-alternatives --install /usr/bin/gfortran gfortran /usr/bin/gfortran-9 90 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # Install additional libraries
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        make cmake openmpi-bin openmpi-common openmpi-doc libopenmpi-dev \
+        libhdf5-dev libhdf5-103 libhdf5-serial-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # Install Nano
+    apt-get update && \
+    apt-get install -y nano \
+
+    # Install Python 3.10
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.10 python3.10-venv python3.10-dev && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    # Install pip for Python 3.10
+    wget https://bootstrap.pypa.io/get-pip.py && \
+    python3.10 get-pip.py && \
+    rm get-pip.py
+
+    # Verify installed versions
+    python3 --version && gcc --version && gfortran --version && mpirun --version
+
+    # Set unlimited core dumps
+    ulimit -c unlimited
+
+    # Compile 2decomp_fft
+    cd /usr/local/2decomp_fft && make all
+    #cd /usr/local/2decomp_fft && cmake -S . -B build
+
+    # Install Python dependencies
+    pip install numpy scipy matplotlib h5py
+
+%runscript
+    cd /home/dns  # Garante que o script será executado na pasta correta

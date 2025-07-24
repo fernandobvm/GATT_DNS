@@ -1,0 +1,67 @@
+FROM ubuntu:22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+RUN umask 0000  # Garante permissões de escrita para todos os usuários
+
+# Copy necessary files
+COPY etc/2decomp_fft /usr/local/2decomp_fft
+COPY source /home/dns/source
+COPY Simulation.py /home/dns/Simulation.py
+
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y software-properties-common build-essential wget && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install GCC 9.4.0
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test && \
+    apt-get update && \
+    apt-get install -y gcc-9 g++-9 gfortran-9-multilib && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90 && \
+    update-alternatives --install /usr/bin/gfortran gfortran /usr/bin/gfortran-9 90 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install additional libraries
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        make cmake openmpi-bin openmpi-common openmpi-doc libopenmpi-dev \
+        libhdf5-dev libhdf5-103 libhdf5-serial-dev && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Nano
+RUN apt-get update && \
+    apt-get install -y nano && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Python 3.10
+RUN add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y python3.10 python3.10-venv python3.10-dev && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install pip for Python 3.10
+RUN wget https://bootstrap.pypa.io/get-pip.py && \
+    python3.10 get-pip.py && \
+    rm get-pip.py
+
+# Verify installed versions
+RUN python3 --version && gcc --version && gfortran --version && mpirun --version
+
+# Set unlimited core dumps
+RUN ulimit -c unlimited
+
+# Compile 2decomp_fft
+RUN cd /usr/local/2decomp_fft && \
+    make all 
+
+# Install Python dependencies
+RUN pip install numpy scipy matplotlib h5py
+
+# Set working directory
+WORKDIR /home/dns/config
+
+# Default command
+#CMD ["/bin/bash"]
