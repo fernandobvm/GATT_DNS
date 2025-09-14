@@ -188,24 +188,30 @@
         UmaxL = maxval(abs(U))
         VmaxL = maxval(abs(V))
         call MPI_Barrier(MPI_COMM_WORLD,ierror)
-        call MPI_REDUCE(UmaxL,Umax,1,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
-        call MPI_REDUCE(VmaxL,Vmax,1,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
+        
+        !call MPI_REDUCE(UmaxL,Umax,1,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
+        call MPI_ALLREDUCE(UmaxL, Umax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+
+        !call MPI_REDUCE(VmaxL,Vmax,1,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
+        call MPI_ALLREDUCE(VmaxL, Vmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+
         if (nz.gt.1) then ! For 3D
             WmaxL = maxval(abs(W))
-            call MPI_REDUCE(WmaxL,Wmax,1,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
+            !call MPI_REDUCE(WmaxL,Wmax,1,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
+            call MPI_ALLREDUCE(WmaxL, Wmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
         endif
         
         ! CFLdt is the CFL divided by dt
-        if (nrank.eq.0) then
+        !if (nrank.eq.0) then
             if (nz.gt.1) then ! For 3D
                 CFLdt = (1/Ma + Umax)*dxmin(1) + (1/Ma + Vmax)*dxmin(2) + (1/Ma + Wmax)*dxmin(3)
             else ! For 2D
                 CFLdt = (1/Ma + Umax)*dxmin(1) + (1/Ma + Vmax)*dxmin(2)
                 
             endif
-        endif
+        !endif
         
-        CALL MPI_BCAST(CFLdt, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD, ierror)
+        !CALL MPI_BCAST(CFLdt, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD, ierror)
         
         ! Determine time step and check for saving and ending
         select case (timeControl)
