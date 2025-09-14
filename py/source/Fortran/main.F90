@@ -70,7 +70,10 @@
     real*8 :: NaN
 	logical :: stopDNS = .FALSE.
 
-    
+    ! Variables for collectiveImportFlow.F90    
+    integer :: domain_dims(5)
+    integer, allocatable :: dimensions(:), sendcounts(:), displs(:)
+
     ! INITIALIZE DOMAIN DECOMPOZITION
     call mpi_init(ierror)
     call decomp_2d_init(nx,ny,nz,p_row,p_col)
@@ -92,7 +95,8 @@
     R = 0
     E = 0
     
-    include 'importFlow.F90'
+    !include 'importFlow.F90'
+    include 'collectiveImportFlow.F90'
     
     ! APPLY BOUNDARIES
     call applyBoundCond(U,V,W,R,E,gamma,t, &
