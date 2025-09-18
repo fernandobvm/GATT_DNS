@@ -19,3 +19,5 @@
 /py/source/__pycache__
 *.asv
 /py/meshes
+/py/runs
+/py/config
