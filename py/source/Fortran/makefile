@@ -1,5 +1,6 @@
 FCOMP = mpifort # h5pfc
 ARGS = -ffree-line-length-0
+# ARGS = -ffree-line-length-0 -ffpe-trap=invalid,zero,overflow
 
 HDF5_INCLUDE_DIR = /usr/include/hdf5/openmpi
 HDF5_LIB_DIR = /usr/lib/x86_64-linux-gnu/hdf5/openmpi

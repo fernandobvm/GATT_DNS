@@ -46,12 +46,10 @@
     ! Declare flow variables
     real*8,  dimension(:,:,:), allocatable :: U,V,W,R,E
     logical, dimension(:,:,:), allocatable :: insideWall
-    real*8,  dimension(:,:,:), allocatable :: Ug,Vg,Wg,Rg,Eg
     real*8,  dimension(:,:,:), allocatable :: Umean,Vmean,Wmean,Rmean,Emean
     real*8,  dimension(:,:,:), allocatable :: Unew,Vnew,Wnew,Rnew,Enew
     real*8,  dimension(5)                  :: maxChange, maxChangeL, minChange
     real*8,  dimension(:,:,:), allocatable :: SFD_X
-    real*8,  dimension(:,:,:), allocatable :: SFD_Xg
 
     ! Declare domain decomposition variables
     integer :: ierror
@@ -66,8 +64,8 @@
     real*8, dimension(5) :: trackedValues
     
     ! Declare rest of the variables
-    integer :: i,j,k
     real*8 :: NaN
+    integer :: i,j,k
 	logical :: stopDNS = .FALSE.
 
     ! Variables for collectiveImportFlow.F90    
@@ -99,11 +97,7 @@
     allocate(E(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
     allocate(insideWall(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
     
-    U = 0
-    V = 0
-    W = 0
-    R = 0
-    E = 0
+    U = 0; V = 0; W = 0; R = 0; E = 0
     
     !include 'importFlow2.F90'
     
@@ -144,13 +138,9 @@
 			!include 'importMeanFlow.F90'
         
             ! Collective import via mpi/hdf5 asynchronous I/O
-            call readMeanFlow(U,V,W,R,E, insideWall, nx, ny, nz, NaN)
+            call readMeanFlow(Umean,Vmean,Wmean,Rmean,Emean, insideWall, nx, ny, nz, NaN)
 		else
-			Umean = U
-			Vmean = V
-			Wmean = W
-			Rmean = R
-			Emean = E
+			Umean = U; Wmean = W; Rmean = R; Emean = E
 		endif
     endif
     
@@ -174,13 +164,8 @@
     ! Allocate variables for 'writeTrackedPoints2.F90'
     allocate(local_values(5, nTracked), global_values(5, nTracked, nproc))
 
-    Unew = 0
-    Vnew = 0
-    Wnew = 0
-    Rnew = 0
-    Enew = 0
-    
     stepsUntilSaving = 0
+    Unew = 0; Vnew = 0; Wnew = 0; Rnew = 0; Enew = 0
     
     do while (simulationDone.eq.0)
     
@@ -192,7 +177,6 @@
         call MPI_Barrier(MPI_COMM_WORLD,ierror)
         
         call MPI_ALLREDUCE(UmaxL, Umax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
-
         call MPI_ALLREDUCE(VmaxL, Vmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
 
         if (nz.gt.1) then ! For 3D
@@ -205,7 +189,6 @@
             CFLdt = (1/Ma + Umax)*dxmin(1) + (1/Ma + Vmax)*dxmin(2) + (1/Ma + Wmax)*dxmin(3)
         else ! For 2D
             CFLdt = (1/Ma + Umax)*dxmin(1) + (1/Ma + Vmax)*dxmin(2)
-            
         endif
         
         ! Determine time step and check for saving and ending
@@ -462,13 +445,13 @@
 
             ! Collective export via mpi/hdf5 asynchronous I/O
 			call writeFlow(nSave,t,U,V,W,R,E, insideWall, nx, ny, nz, NaN)
-			
+
 			if(SFD.gt.0) then
 				if(SFD_Delta.gt.0) then
 					!include 'exportMeanFlow.F90'
 
                     ! Collective export via mpi/hdf5 asynchronous I/O
-                    call writeMeanFlow(U,V,W,R,E, insideWall, nx, ny, nz, NaN)
+                    call writeMeanFlow(Umean,Vmean,Wmean,Rmean,Emean, insideWall, nx, ny, nz, NaN)
 				endif
 			endif
 			

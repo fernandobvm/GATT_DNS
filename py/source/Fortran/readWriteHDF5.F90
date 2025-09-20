@@ -25,6 +25,7 @@ contains
 
       hdf5_initialized = .true.
     endif
+    
   end subroutine setup_hdf5_io
 
   subroutine h5close()
@@ -75,8 +76,8 @@ contains
     real*8, intent(inout) :: NaN
     integer, intent(in) :: timeStep
     integer, intent(in) :: nx, ny, nz
-    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: insideWall
-    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: U, V, W, R, E
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: U, V, W, R, E
 
     character(len=10) :: timeChar
     character(len=100) :: filename
@@ -92,8 +93,8 @@ contains
   subroutine readMeanFlow(U, V, W, R, E, insideWall, nx, ny, nz, NaN)
     real*8, intent(inout) :: NaN
     integer, intent(in) :: nx, ny, nz
-    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: insideWall
-    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(out) :: U, V, W, R, E
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: U, V, W, R, E
     
     real*8 :: t
     character(len=100) :: filename = '../meanflowSFD.h5'
@@ -107,11 +108,10 @@ contains
     real*8, intent(in) :: NaN
     integer, intent(in) :: timeStep
     integer, intent(in) :: nx, ny, nz
-    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: insideWall
-    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: U, V, W, R, E
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
     
     character(len=100) :: filename
-
 
     ! Criar filename
     if (timeStep < 0) then
@@ -128,8 +128,8 @@ contains
     real*8 :: t
     real*8, intent(in) :: NaN
     integer, intent(in) :: nx, ny, nz
-    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: insideWall
-    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: U, V, W, R, E
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
     
     character(len=100) :: filename = '../meanflowSFD.h5'
     
@@ -142,8 +142,8 @@ contains
     real*8, intent(inout) :: NaN
     integer, intent(in) :: nx, ny, nz
     character(len=100), intent(in) :: filename
-    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: insideWall
-    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: U, V, W, R, E
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: U, V, W, R, E
 
     integer :: error, mpierr
     integer(HSIZE_T) :: dims_scalar(1) = [1]
@@ -156,7 +156,6 @@ contains
 
     ! print *, 'Rank', nrank, ' readFlow offset: ', offset
     ! print *, 'Rank', nrank, ' readFlow dims_local: ', dims_local
-    ! print *, 'Rank', nrank, ' readFlow dims_global: ', dims_global
     ! print *, 'Rank', nrank, ' readFlow [nx, ny, nz]: ', [nx, ny, nz]
 
     ! Inicializar HDF5 paralelo
@@ -229,23 +228,25 @@ contains
     real*8, intent(in) :: NaN
     integer, intent(in) :: nx, ny, nz
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
-    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(INOUT) :: U, V, W, R, E
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
     
     integer :: error, mpierr
     integer(HSIZE_T) :: dims_scalar(1) = [1]
     character(len=100), intent(in) :: filename
     integer(HID_T) :: file_id, scalar_space, scalar_dset
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: Uw, Vw, Ww, Rw, Ew
     
     ! Substituir paredes por NaN localmente
+    Uw = U; Vw = V; Ww = W; Rw = R; Ew = E
     do k = xstart(3), xend(3)
         do j = xstart(2), xend(2)
             do i = xstart(1), xend(1)
                 if (insideWall(i,j,k)) then
-                    U(i,j,k) = NaN
-                    V(i,j,k) = NaN
-                    W(i,j,k) = NaN
-                    R(i,j,k) = NaN
-                    E(i,j,k) = NaN
+                    Uw(i,j,k) = NaN
+                    Vw(i,j,k) = NaN
+                    Ww(i,j,k) = NaN
+                    Rw(i,j,k) = NaN
+                    Ew(i,j,k) = NaN
                 endif
             enddo
         enddo
@@ -258,7 +259,6 @@ contains
     
     ! print *, 'Rank', nrank, ' writeFlow offset: ', offset
     ! print *, 'Rank', nrank, ' writeFlow dims_local: ', dims_local
-    ! print *, 'Rank', nrank, ' writeFlow dims_global: ', dims_global
     ! print *, 'Rank', nrank, ' writeFlow [nx, ny, nz]: ', [nx, ny, nz]
 
     ! Inicializar HDF5 paralelo
