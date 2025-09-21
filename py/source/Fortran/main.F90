@@ -44,24 +44,24 @@
     integer, dimension(:), allocatable :: cAdiabatic ! Adiabatic flag for corners
     
     ! Declare flow variables
+    real*8,  dimension(:,:,:), allocatable :: SFD_X
     real*8,  dimension(:,:,:), allocatable :: U,V,W,R,E
     logical, dimension(:,:,:), allocatable :: insideWall
     real*8,  dimension(:,:,:), allocatable :: Umean,Vmean,Wmean,Rmean,Emean
     real*8,  dimension(:,:,:), allocatable :: Unew,Vnew,Wnew,Rnew,Enew
     real*8,  dimension(5)                  :: maxChange, maxChangeL, minChange
-    real*8,  dimension(:,:,:), allocatable :: SFD_X
 
     ! Declare domain decomposition variables
     integer :: ierror
     integer, dimension(:), allocatable :: sliceSizes, slicesJStarts, slicesJEnds, slicesKStarts, slicesKEnds
     
     ! Declare time stepping variables
-    integer :: tstep, nSaveTemp, simulationDone, stepsUntilSaving
     real*8 :: t, dt
-    real*8 :: CFLdt, CFL, UmaxL, VmaxL, WmaxL, Umax, Vmax, Wmax
     integer :: nTracked
-    integer, dimension(:,:), allocatable :: indTracked
     real*8, dimension(5) :: trackedValues
+    integer, dimension(:,:), allocatable :: indTracked
+    real*8 :: CFLdt, CFL, UmaxL, VmaxL, WmaxL, Umax, Vmax, Wmax
+    integer :: tstep, nSaveTemp, simulationDone, stepsUntilSaving
     
     ! Declare rest of the variables
     real*8 :: NaN
@@ -171,17 +171,26 @@
     
         ! TIME CONTROL
         
-        ! Get maximum velocity from all slices
-        UmaxL = maxval(abs(U))
-        VmaxL = maxval(abs(V))
-        call MPI_Barrier(MPI_COMM_WORLD,ierror)
-        
-        call MPI_ALLREDUCE(UmaxL, Umax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
-        call MPI_ALLREDUCE(VmaxL, Vmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+        ! For fixed dt, evaluating CFL only once for while to optmize multi-node simulations...		
+        if ((mod(tstep,logAll).eq.0).or.(stepsUntilSaving.eq.0).or.(timeControl.eq.2)) then
 
-        if (nz.gt.1) then ! For 3D
-            WmaxL = maxval(abs(W))
-            call MPI_ALLREDUCE(WmaxL, Wmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+            ! Get maximum velocity from all slices
+            UmaxL = maxval(abs(U))
+            VmaxL = maxval(abs(V))
+
+            call MPI_Barrier(MPI_COMM_WORLD, ierror)
+            
+            call MPI_ALLREDUCE(UmaxL, Umax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+            call MPI_ALLREDUCE(VmaxL, Vmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+
+            if (nz.gt.1) then ! For 3D
+                WmaxL = maxval(abs(W))
+                call MPI_ALLREDUCE(WmaxL, Wmax, 1, MPI_REAL8, MPI_MAX, MPI_COMM_WORLD, ierror)
+            endif
+
+        else
+            Umax = maxval(abs(U))
+            Vmax = maxval(abs(V))
         endif
         
         ! CFLdt is the CFL divided by dt
@@ -217,11 +226,14 @@
                 
                 stepsUntilSaving = stepsUntilSaving-1
                 
-                
                 if ((t+dt).ge.tmaxReal) then
                     simulationDone = 1
                 endif
-                
+
+            case (3) ! Hybrid: Maximum CFL followed by fixed dt.
+
+                ! TODO
+
         end select
         
         CFL = dt*CFLdt
@@ -382,53 +394,60 @@
 				& iUd, iVd, iWd, iPd, iEd, iUn, iVn, iWn, iPn, iEn, iUs, iVs, iWs, iPs, iEs, &
 				& vUd, vVd, vWd, vPd, vEd, dUn, dVn, dWn, dPn, dEn, dUs, dVs, dWs, dPs, dEs, &
 				& cN, cL, cD, cAdiabatic)
-				
-        ! Get maximum value changes in the domain
-        maxChangeL(1) = maxval(abs(Unew - U))
-        maxChangeL(2) = maxval(abs(Vnew - V))
-        maxChangeL(3) = maxval(abs(Wnew - W))
-        maxChangeL(4) = maxval(abs(Rnew - R))
-        maxChangeL(5) = maxval(abs(Enew - E))
-        
-        call MPI_REDUCE(maxChangeL,maxChange,5,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
-        
-        ! Update time
-        tstep = tstep + 1
-        t = t + dt
-        
-        ! Write to screen
-        if(nrank.eq.0) then
-            write(*,*) ''
-            write(*,'(A9,I10,A13,EN14.6E1,A7,ES10.5E1,A8,F8.5)') 'Step = ', tstep, 'Time = ', t, 'dt = ', dt, 'CFL = ', CFL
-            write(*,'(3(A13,ES10.4))') 'U change = ', maxChange(1), 'V change = ', maxChange(2), 'W change = ', maxChange(3)
-            write(*,'(2(A13,ES10.4))') 'R change = ', maxChange(4), 'E change = ', maxChange(5)
+
+        ! Evaluate stop-condition only once for while to optmize multi-node simulations...		
+        if ((mod(tstep,logAll).eq.0).or.(stepsUntilSaving.eq.0)) then
+
+            ! Get maximum value changes in the domain
+            maxChangeL(1) = maxval(abs(Unew - U))
+            maxChangeL(2) = maxval(abs(Vnew - V))
+            maxChangeL(3) = maxval(abs(Wnew - W))
+            maxChangeL(4) = maxval(abs(Rnew - R))
+            maxChangeL(5) = maxval(abs(Enew - E))
             
-            ! Check if flow has diverged
-            if((any(isnan(maxChange))).OR.(sum(maxChange).eq.0)) then
-				stopDNS = .TRUE.
-                write(*,*) 'Flow has diverged, stopping'
+            call MPI_REDUCE(maxChangeL,maxChange,5,MPI_REAL8,MPI_MAX,0,MPI_COMM_WORLD,ierror)
+            
+            ! Update time
+            tstep = tstep + 1
+            t = t + dt
+            
+            ! Write to screen
+            if(nrank.eq.0) then
+                write(*,*) ''
+                write(*,'(A9,I10,A13,EN14.6E1,A7,ES10.5E1,A8,F8.5)') 'Step = ', tstep, 'Time = ', t, 'dt = ', dt, 'CFL = ', CFL
+                write(*,'(3(A13,ES10.4))') 'U change = ', maxChange(1), 'V change = ', maxChange(2), 'W change = ', maxChange(3)
+                write(*,'(2(A13,ES10.4))') 'R change = ', maxChange(4), 'E change = ', maxChange(5)
+                
+                ! Check if flow has diverged
+                if((any(isnan(maxChange))).OR.(sum(maxChange).eq.0)) then
+                    stopDNS = .TRUE.
+                    write(*,*) 'Flow has diverged, stopping'
+                endif
             endif
+            
+            ! Stop code if flow has diverged and save results
+            CALL MPI_BCAST(stopDNS, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierror)
+
+            if(stopDNS) then
+                nSave = -1
+                ! include 'exportFlow.F90'
+
+                ! Collective export via mpi/hdf5 asynchronous I/O
+                call writeFlow(nSave,t,U,V,W,R,E, insideWall, nx, ny, nz, NaN)
+
+                call decomp_2d_finalize
+                call MPI_FINALIZE(ierror)
+                stop
+            endif
+
+        else
+            ! Update time
+            tstep = tstep + 1
+            t = t + dt
         endif
 		
-		! Stop code if flow has diverged and save results
-		CALL MPI_BCAST(stopDNS, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierror)
-		if(stopDNS) then
-			nSave = -1
-			! include 'exportFlow.F90'
-
-            ! Collective export via mpi/hdf5 asynchronous I/O
-			call writeFlow(nSave,t,U,V,W,R,E, insideWall, nx, ny, nz, NaN)
-
-			call decomp_2d_finalize
-			call MPI_FINALIZE(ierror)
-			stop
-		endif
-		
 		! Update flow
-		U = Unew
-        V = Vnew
-        R = Rnew
-        E = Enew
+		U = Unew; V = Vnew; R = Rnew ; E = Enew
         if (nz.gt.1) then
             W = Wnew
         endif

@@ -25,7 +25,7 @@ contains
 
       hdf5_initialized = .true.
     endif
-    
+
   end subroutine setup_hdf5_io
 
   subroutine h5close()
@@ -162,7 +162,7 @@ contains
     call setup_hdf5_io()
     
     ! Abrir arquivo em paralelo
-    print *, "Opening file: ", filename
+    print *, "Opening file: ", filename, '[nx, ny, nz]: ', [nx, ny, nz]
     call h5fopen_f(trim(filename), H5F_ACC_RDONLY_F, file_id, error, access_prp=plist_id)
     if (error /= 0) then
       print *, 'Rank', nrank, ': h5fopen_f failed for ', trim(filename), ' (error=', error, ')'
@@ -377,6 +377,8 @@ contains
     integer(HSIZE_T) :: chunk_dims(3)
     integer :: error, mpierr
     
+    integer(8) :: chunk_int_local(3), chunk_int_global(3)
+
     ! Criar dataspace global
     call h5screate_simple_f(3, dims_global, filespace, error)
     if (error /= 0) then
@@ -390,17 +392,17 @@ contains
       print *, 'Rank', nrank, ': h5pcreate_f (DCPL) failed (error=', error, ')'
       call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
     endif
+
     chunk_dims = dims_local
     call h5pset_chunk_f(dcpl_id, 3, chunk_dims, error)
     call h5pset_deflate_f(dcpl_id, 6, error)
 
-    ! ! compute consistent chunk_dims across ranks
-    ! ! integer(HSIZE_T) :: chunk_dims(3)
+    ! compute consistent chunk_dims across ranks
+    ! integer(HSIZE_T) :: chunk_dims(3)
     ! integer(8) :: chunk_int_local(3), chunk_int_global(3)
     ! chunk_int_local = [int(dims_local(1),8), int(dims_local(2),8), int(dims_local(3),8)]
     ! call MPI_ALLREDUCE(chunk_int_local, chunk_int_global, 3, MPI_INTEGER8, MPI_MAX, MPI_COMM_WORLD, mpierr)
-    ! chunk_dims = [HSIZE_T(chunk_int_global(1)), HSIZE_T(chunk_int_global(2)), HSIZE_T(chunk_int_global(3))]
-
+    ! chunk_dims = [chunk_int_global(1), chunk_int_global(2), chunk_int_global(3)]
     ! call h5pset_chunk_f(dcpl_id, 3, chunk_dims, error)
     ! ! optionally remove/comment the next line to test without compression
     ! call h5pset_deflate_f(dcpl_id, 6, error)    
