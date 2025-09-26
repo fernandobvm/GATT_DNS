@@ -10,18 +10,56 @@ module readWriteHDF5
   
   integer :: i,j,k
   integer(HID_T) :: plist_id
+  integer :: mpi_info = MPI_INFO_NULL
   logical :: hdf5_initialized = .false.
-  integer(HSIZE_T), dimension(3) :: dims_global, dims_local, offset
+  integer(HSIZE_T), dimension(3) :: dims_global, dims_local, offset, local_chunks_layout, chunks_layout
   
+  ! chunk / alignment tuning
+  integer(hsize_t) :: cb_nodes = 64                     ! romio cb_nodes default suggestion (tune for system)
+  integer(hsize_t) :: alignment = 1048576_hsize_t       ! default alignment 1MB
+  integer(hsize_t) :: cb_buffer_size = 16777216_hsize_t ! 16MB
+  integer(hsize_t) :: target_chunk_bytes = 4_hsize_t*1024_hsize_t*1024_hsize_t  ! default 4 MB
+
 contains
 
-  subroutine setup_hdf5_io()
+  subroutine setup_hdf5_io(nx, ny, nz)
     integer :: error
+    integer, intent(in) :: nx, ny, nz
 
     if (.not. hdf5_initialized) then
+
+      ! Prepare MPI_Info hints for ROMIO (used only in PHDF5 case)
+      call MPI_INFO_CREATE(mpi_info, error)
+      call MPI_INFO_SET(mpi_info, 'romio_cb_write', 'enable', error)
+      call MPI_INFO_SET(mpi_info, 'cb_nodes', trim(adjustl(itoa(cb_nodes))), error)
+      call MPI_INFO_SET(mpi_info, 'cb_buffer_size', trim(adjustl(itoa(cb_buffer_size))), error)
+
+      ! Initializing...
       call h5open_f(error)
       call h5pcreate_f(H5P_FILE_ACCESS_F, plist_id, error)
-      call h5pset_fapl_mpio_f(plist_id, MPI_COMM_WORLD, MPI_INFO_NULL, error)
+      call h5pset_fapl_mpio_f(plist_id, MPI_COMM_WORLD, mpi_info, error)
+
+      ! collective metadata optimizations
+      call h5pset_all_coll_metadata_ops_f(plist_id, .true., error)
+      call h5pset_coll_metadata_write_f(plist_id, .true., error)
+
+      ! libver bounds (latest)
+      call h5pset_libver_bounds_f(plist_id, H5F_LIBVER_V18_F, H5F_LIBVER_LATEST_F, error)
+
+      ! alignment (threshold, alignment)
+      call h5pset_alignment_f(plist_id, 0_hsize_t, alignment, error)
+
+      ! Configurar dimensões para leitura paralela
+      dims_global = [nx, ny, nz]
+      dims_local = [xsize(1), xsize(2), xsize(3)]
+      offset = [xstart(1)-1, xstart(2)-1, xstart(3)-1]
+
+      call MPI_ALLREDUCE(dims_local, chunks_layout, 3, MPI_INTEGER8, MPI_MAX, MPI_COMM_WORLD, error)
+      ! call MPI_ALLREDUCE(dims_local, chunks_layout, 3, MPI_INTEGER8, MPI_MIN, MPI_COMM_WORLD, error)
+
+      print *, 'Rank', nrank, ' setup_hdf5_io offset: ', offset
+      print *, 'Rank', nrank, ' setup_hdf5_io dims_local: ', dims_local
+      print *, 'Rank', nrank, ' setup_hdf5_io chunks_layout: ', chunks_layout
 
       hdf5_initialized = .true.
     endif
@@ -38,20 +76,11 @@ contains
     endif
   end subroutine h5close
 
-  subroutine readSFD(sfd_X, nx, ny, nz)
+  subroutine readSFD(sfd_X)
     integer :: error, mpierr
     integer(HID_T) :: file_id
-    integer, intent(in) :: nx, ny, nz
     character(len=100) :: filename = 'SFD_X.h5'
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(out) :: sfd_X
-    
-    ! Configurar dimensões para leitura paralela
-    dims_global = [nx, ny, nz]
-    dims_local = [xsize(1), xsize(2), xsize(3)]
-    offset = [xstart(1)-1, xstart(2)-1, xstart(3)-1]
-    
-    ! Inicializar HDF5 paralelo
-    call setup_hdf5_io()
     
     ! Abrir arquivo em paralelo
     call h5fopen_f(filename, H5F_ACC_RDONLY_F, file_id, error, access_prp=plist_id)
@@ -71,11 +100,10 @@ contains
     endif
   end subroutine readSFD
 
-  subroutine readFlow(timeStep, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+  subroutine readFlow(timeStep, t, U, V, W, R, E, insideWall, NaN)
     real*8, intent(out) :: t
     real*8, intent(inout) :: NaN
     integer, intent(in) :: timeStep
-    integer, intent(in) :: nx, ny, nz
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: insideWall
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: U, V, W, R, E
 
@@ -86,28 +114,26 @@ contains
     write(timeChar, fmt='(i10.10)') timeStep
     filename = '../flow_'//trim(timeChar)//'.h5'
 
-    call readFile(filename, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+    call readFile(filename, t, U, V, W, R, E, insideWall, NaN)
 
   end subroutine readFlow
 
-  subroutine readMeanFlow(U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+  subroutine readMeanFlow(U, V, W, R, E, insideWall, NaN)
     real*8, intent(inout) :: NaN
-    integer, intent(in) :: nx, ny, nz
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: insideWall
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: U, V, W, R, E
     
     real*8 :: t
     character(len=100) :: filename = '../meanflowSFD.h5'
     
-    call readFile(filename, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+    call readFile(filename, t, U, V, W, R, E, insideWall, NaN)
 
   end subroutine readMeanFlow
 
-  subroutine writeFlow(timeStep, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+  subroutine writeFlow(timeStep, t, U, V, W, R, E, insideWall, NaN)
     real*8, intent(out) :: t
     real*8, intent(in) :: NaN
     integer, intent(in) :: timeStep
-    integer, intent(in) :: nx, ny, nz
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
     
@@ -120,27 +146,25 @@ contains
       write(filename, '("../flow_", i10.10, ".h5")') timeStep
     endif
 
-    call writeFile(filename, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+    call writeFile(filename, t, U, V, W, R, E, insideWall, NaN)
 
   end subroutine writeFlow
 
-  subroutine writeMeanFlow(U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+  subroutine writeMeanFlow(U, V, W, R, E, insideWall, NaN)
     real*8 :: t
     real*8, intent(in) :: NaN
-    integer, intent(in) :: nx, ny, nz
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
     
     character(len=100) :: filename = '../meanflowSFD.h5'
     
-    call writeFile(filename, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+    call writeFile(filename, t, U, V, W, R, E, insideWall, NaN)
     
   end subroutine writeMeanFlow
 
-  subroutine readFile(filename, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+  subroutine readFile(filename, t, U, V, W, R, E, insideWall, NaN)
     real*8, intent(out) :: t
     real*8, intent(inout) :: NaN
-    integer, intent(in) :: nx, ny, nz
     character(len=100), intent(in) :: filename
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: insideWall
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(inout) :: U, V, W, R, E
@@ -148,21 +172,9 @@ contains
     integer :: error, mpierr
     integer(HSIZE_T) :: dims_scalar(1) = [1]
     integer(HID_T) :: file_id, dset_id, filespace, memspace
-
-    ! Configurar dimensões para leitura paralela
-    dims_global = [nx, ny, nz]
-    dims_local = [xsize(1), xsize(2), xsize(3)]
-    offset = [xstart(1)-1, xstart(2)-1, xstart(3)-1]
-
-    ! print *, 'Rank', nrank, ' readFlow offset: ', offset
-    ! print *, 'Rank', nrank, ' readFlow dims_local: ', dims_local
-    ! print *, 'Rank', nrank, ' readFlow [nx, ny, nz]: ', [nx, ny, nz]
-
-    ! Inicializar HDF5 paralelo
-    call setup_hdf5_io()
-    
+  
     ! Abrir arquivo em paralelo
-    print *, "Opening file: ", filename, '[nx, ny, nz]: ', [nx, ny, nz]
+    print *, 'Rank', nrank, ": Opening file: ", filename !, 'dims_local: ', dims_local
     call h5fopen_f(trim(filename), H5F_ACC_RDONLY_F, file_id, error, access_prp=plist_id)
     if (error /= 0) then
       print *, 'Rank', nrank, ': h5fopen_f failed for ', trim(filename), ' (error=', error, ')'
@@ -223,10 +235,9 @@ contains
     endif
   end subroutine readFile
 
-  subroutine writeFile(filename, t, U, V, W, R, E, insideWall, nx, ny, nz, NaN)
+  subroutine writeFile(filename, t, U, V, W, R, E, insideWall, NaN)
     real*8, intent(in) :: t
     real*8, intent(in) :: NaN
-    integer, intent(in) :: nx, ny, nz
     logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
     
@@ -251,18 +262,6 @@ contains
             enddo
         enddo
     enddo
-
-    ! Configurar dimensões para escrita paralela
-    dims_global = [nx, ny, nz]
-    dims_local = [xsize(1), xsize(2), xsize(3)]
-    offset = [xstart(1)-1, xstart(2)-1, xstart(3)-1]
-    
-    ! print *, 'Rank', nrank, ' writeFlow offset: ', offset
-    ! print *, 'Rank', nrank, ' writeFlow dims_local: ', dims_local
-    ! print *, 'Rank', nrank, ' writeFlow [nx, ny, nz]: ', [nx, ny, nz]
-
-    ! Inicializar HDF5 paralelo
-    call setup_hdf5_io()
     
     ! Criar arquivo com acesso paralelo
     call h5fcreate_f(trim(filename), H5F_ACC_TRUNC_F, file_id, error, access_prp=plist_id)
@@ -274,21 +273,24 @@ contains
     ! Escrever tempo (apenas rank 0)
     call h5screate_simple_f(1, dims_scalar, scalar_space, error)
     if (error /= 0) then
-    print *, 'Rank', nrank, ': h5screate_simple_f failed for scalar (error=', error, ')'
-    call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+      print *, 'Rank', nrank, ': h5screate_simple_f failed for scalar (error=', error, ')'
+      call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
     endif
+
     call h5dcreate_f(file_id, "t", H5T_NATIVE_DOUBLE, scalar_space, scalar_dset, error)
     if (error /= 0) then
-    print *, 'Rank', nrank, ': h5dcreate_f failed for dataset t (error=', error, ')'
-    call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+      print *, 'Rank', nrank, ': h5dcreate_f failed for dataset t (error=', error, ')'
+      call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
     endif
+
     if (nrank == 0) then
-    call h5dwrite_f(scalar_dset, H5T_NATIVE_DOUBLE, t, dims_scalar, error)
-    if (error /= 0) then
+      call h5dwrite_f(scalar_dset, H5T_NATIVE_DOUBLE, t, dims_scalar, error)
+      if (error /= 0) then
         print *, 'Rank', nrank, ': h5dwrite_f failed for dataset t (error=', error, ')'
         call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+      endif
     endif
-    endif
+    
     call h5dclose_f(scalar_dset, error)
     call h5sclose_f(scalar_space, error)
 
@@ -374,11 +376,8 @@ contains
     real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: field_data
     
     integer(HID_T) :: dset_id, filespace, memspace, dcpl_id, xfer_plist
-    integer(HSIZE_T) :: chunk_dims(3)
     integer :: error, mpierr
     
-    integer(8) :: chunk_int_local(3), chunk_int_global(3)
-
     ! Criar dataspace global
     call h5screate_simple_f(3, dims_global, filespace, error)
     if (error /= 0) then
@@ -393,19 +392,8 @@ contains
       call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
     endif
 
-    chunk_dims = dims_local
-    call h5pset_chunk_f(dcpl_id, 3, chunk_dims, error)
-    call h5pset_deflate_f(dcpl_id, 6, error)
-
-    ! compute consistent chunk_dims across ranks
-    ! integer(HSIZE_T) :: chunk_dims(3)
-    ! integer(8) :: chunk_int_local(3), chunk_int_global(3)
-    ! chunk_int_local = [int(dims_local(1),8), int(dims_local(2),8), int(dims_local(3),8)]
-    ! call MPI_ALLREDUCE(chunk_int_local, chunk_int_global, 3, MPI_INTEGER8, MPI_MAX, MPI_COMM_WORLD, mpierr)
-    ! chunk_dims = [chunk_int_global(1), chunk_int_global(2), chunk_int_global(3)]
-    ! call h5pset_chunk_f(dcpl_id, 3, chunk_dims, error)
-    ! ! optionally remove/comment the next line to test without compression
-    ! call h5pset_deflate_f(dcpl_id, 6, error)    
+    call h5pset_chunk_f(dcpl_id, 3, chunks_layout, error)
+    ! call h5pset_deflate_f(dcpl_id, 9, error)
 
     ! Criar dataset
     call h5dcreate_f(file_id, field_name, H5T_NATIVE_DOUBLE, filespace, dset_id, error, dcpl_id)
@@ -461,5 +449,24 @@ contains
     call h5sclose_f(filespace, error)
     call h5dclose_f(dset_id, error)
   end subroutine write_3d_field
+
+  function itoa(i, fmt) result(str)
+      ! Função para converter inteiro para string (itoa = integer to ASCII)
+      integer(hsize_t), intent(in) :: i  ! Tipo genérico para aceitar diferentes KINDs de inteiros
+      character(len=*), intent(in), optional :: fmt  ! Formato opcional
+      character(len=64) :: tmp
+      character(len=64) :: str
+
+      ! Se o formato for fornecido, usa-se esse formato. Caso contrário, usa-se um formato padrão
+      if (present(fmt)) then
+          write(tmp, fmt) i
+      else
+          write(tmp, '(I64)') i  ! Usando um formato padrão para inteiros (com até 64 caracteres)
+      end if
+
+      ! Ajusta e remove espaços à esquerda e à direita
+      str = adjustl(trim(tmp))
+
+  end function itoa
 
 end module readWriteHDF5
