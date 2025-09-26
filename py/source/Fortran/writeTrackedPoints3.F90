@@ -3,6 +3,8 @@
 ! integer, allocatable :: tp_sendcounts(:), tp_displs(:)
 ! character(len=:), allocatable :: tp_sendbuf, tp_recvbuf
 
+t2 = MPI_Wtime()
+
 ! Calcular tamanho do buffer necessário
 tp_packed_size = 0
 do i = 1, nTracked
@@ -68,6 +70,8 @@ call MPI_GATHERV(tp_sendbuf, tp_position, MPI_PACKED, &
                  tp_recvbuf, tp_sendcounts, tp_displs, MPI_PACKED, &
                  0, MPI_COMM_WORLD, ierror)
 
+comm_time = comm_time + (MPI_Wtime() - t2)
+
 ! Processar no root
 if (nrank.eq.0) then
     open(2, file='../log.txt', status='unknown', access='append')
@@ -85,6 +89,7 @@ if (nrank.eq.0) then
     ! Processar dados recebidos
     tp_position = 0
     do while (tp_position < tp_total_size)
+        t2 = MPI_Wtime()
         ! Desempacotar índice
         call MPI_UNPACK(tp_recvbuf, tp_total_size, tp_position, i, 1, MPI_INTEGER, MPI_COMM_WORLD, ierror)
         
@@ -96,7 +101,9 @@ if (nrank.eq.0) then
             trackedValues(4) = trackedValues(4) - 1
             trackedValues(5) = trackedValues(5) / trackedNorm - 1
         endif
-        
+        comm_time = comm_time + (MPI_Wtime() - t2)
+
+        t2 = MPI_Wtime()
         do j = 1, 5
             if (trackedValues(j) == 0) then
                 write(2, '(A1,A1)', advance='no') char(9), "0"
@@ -104,6 +111,7 @@ if (nrank.eq.0) then
                 write(2, '(A1,ES15.8E2)', advance='no') char(9), trackedValues(j)
             endif
         enddo
+        io_time = io_time + (MPI_Wtime() - t2)
     enddo
     
     close(2)

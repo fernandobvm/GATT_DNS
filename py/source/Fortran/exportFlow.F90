@@ -7,6 +7,7 @@
 			Rg(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)) = R
 			Eg(xstart(1):xend(1),xstart(2):xend(2),xstart(3):xend(3)) = E
 			
+			t3 = MPI_Wtime()
 			do i = 1,nproc-1
 				call MPI_RECV(Ug(xstart(1):xend(1),slicesJStarts(i):slicesJEnds(i),slicesKStarts(i):slicesKEnds(i)), sliceSizes(i), MPI_REAL8, i, 1,  MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
 				call MPI_RECV(Vg(xstart(1):xend(1),slicesJStarts(i):slicesJEnds(i),slicesKStarts(i):slicesKEnds(i)), sliceSizes(i), MPI_REAL8, i, 2,  MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
@@ -14,6 +15,7 @@
 				call MPI_RECV(Rg(xstart(1):xend(1),slicesJStarts(i):slicesJEnds(i),slicesKStarts(i):slicesKEnds(i)), sliceSizes(i), MPI_REAL8, i, 4,  MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
 				call MPI_RECV(Eg(xstart(1):xend(1),slicesJStarts(i):slicesJEnds(i),slicesKStarts(i):slicesKEnds(i)), sliceSizes(i), MPI_REAL8, i, 5,  MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
 			enddo
+            print *, 'Rank', nrank, ' -> writeFlow (comm):', (MPI_Wtime() - t3)
 			
 			! Add nans inside walls
 			do i = 1,nx
@@ -30,13 +32,17 @@
 				enddo
 			enddo
 			
+			t3 = MPI_Wtime()
 			! Save the flow to file
 			call writeFlow(nSave,t,Ug,Vg,Wg,Rg,Eg)
+            print *, 'Rank', nrank, ' -> writeFlow (disk):', (MPI_Wtime() - t3)
         
         else ! If not the root, send data
+			t3 = MPI_Wtime()
             call MPI_SEND(U, xsize(1)*xsize(2)*xsize(3), MPI_REAL8, 0, 1, MPI_COMM_WORLD, ierror)
             call MPI_SEND(V, xsize(1)*xsize(2)*xsize(3), MPI_REAL8, 0, 2, MPI_COMM_WORLD, ierror)
             call MPI_SEND(W, xsize(1)*xsize(2)*xsize(3), MPI_REAL8, 0, 3, MPI_COMM_WORLD, ierror)
             call MPI_SEND(R, xsize(1)*xsize(2)*xsize(3), MPI_REAL8, 0, 4, MPI_COMM_WORLD, ierror)
             call MPI_SEND(E, xsize(1)*xsize(2)*xsize(3), MPI_REAL8, 0, 5, MPI_COMM_WORLD, ierror)
+            print *, 'Rank', nrank, ' -> writeFlow (comm):', (MPI_Wtime() - t3)
         endif
