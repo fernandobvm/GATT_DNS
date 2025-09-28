@@ -27,7 +27,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test && \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         make cmake openmpi-bin openmpi-common openmpi-doc libopenmpi-dev \
-        libhdf5-dev libhdf5-103 libhdf5-serial-dev && \
+        libhdf5-dev libhdf5-103 libhdf5-openmpi-dev  && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Nano
