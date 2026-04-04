@@ -446,7 +446,7 @@ class BoundaryConditions:
                 self.flow_type.disturb.append([])
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
-            self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
+            self.flow_type.disturb[0].x = [self.mesh.X[0], self.mesh.X[0]]
             self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
@@ -947,7 +947,7 @@ class BoundaryConditions:
                     self.flow_type.disturb.append([])
                     self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
                 self.flow_type.disturb[0] = []
-                self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
+                self.flow_type.disturb[0].x = [self.mesh.X[0], self.mesh.X[0]]
                 self.flow_type.disturb[0].y = [-np.inf, np.inf] 
                 self.flow_type.disturb[0].z = [-np.inf, np.inf]
                 self.flow_type.disturb[0].var = 'UVRWE'
@@ -1430,7 +1430,7 @@ class BoundaryConditions:
                 self.flow_type.disturb.append([])
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
-            self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
+            self.flow_type.disturb[0].x = [self.mesh.X[0], self.mesh.X[0]]
             self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
@@ -1936,7 +1936,7 @@ class BoundaryConditions:
                 self.flow_type.disturb.append([])
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
-            self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
+            self.flow_type.disturb[0].x = [self.mesh.X[0], self.mesh.X[0]]
             self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
@@ -2417,7 +2417,7 @@ class BoundaryConditions:
                 self.flow_type.disturb.append([])
                 self.flow_type.disturb[1:-1] = self.flow_type.disturb[0]
             self.flow_type.disturb[0] = []
-            self.flow_type.disturb[0].x = [self.mesh.X(1), self.mesh.X(1)]
+            self.flow_type.disturb[0].x = [self.mesh.X[0], self.mesh.X[0]]
             self.flow_type.disturb[0].y = [-np.inf, np.inf] 
             self.flow_type.disturb[0].z = [-np.inf, np.inf]
             self.flow_type.disturb[0].var = 'UVRWE'
