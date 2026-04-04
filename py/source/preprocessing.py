@@ -394,6 +394,12 @@ class Preprocessing:
             outFile.write(f'    integer :: p_row = {p_row}\n')
             outFile.write(f'    integer :: p_col = {p_col}\n')
 
+            if hasattr(time, 'saveDerivs') and time.saveDerivs:
+                outFile.write('    logical :: saveDerivs = .TRUE.\n')
+            else:
+                outFile.write('    logical :: saveDerivs = .FALSE.\n')
+                
+
         # File is closed automatically after exiting the 'with' block
 
     def writeFortranMatrices(self, bin_path, matrices, num_methods, mesh):

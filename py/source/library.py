@@ -388,7 +388,7 @@ class Domain:
         self.zf = zf
 
 class Time:
-    def __init__(self, dt, max_cfl,  control, qtimes, tmax, nStep = None, CFLignoreZ=False):
+    def __init__(self, dt, max_cfl,  control, qtimes, tmax, nStep = None, CFLignoreZ=False, saveDerivs =False):
         self.dt = dt                  # time step size
         self.tmax = tmax              # max time value
         self.nStep = nStep            # number of steps for saving data | usado no checkPreviousRun.m
@@ -396,6 +396,7 @@ class Time:
         self.qtimes = qtimes          # query times for controlling time
         self.control = control        # control type ('dt' or 'cfl')
         self.CFLignoreZ = CFLignoreZ  # flag to ignore CFL condition in Z direction
+        self.saveDerivs = saveDerivs
 
 
 class NumericalMethods:

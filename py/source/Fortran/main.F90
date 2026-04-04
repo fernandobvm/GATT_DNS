@@ -53,7 +53,7 @@
     
     ! Declare flow variables
     real*8,  dimension(:,:,:), allocatable :: SFD_X
-    real*8,  dimension(:,:,:), allocatable :: U,V,W,R,E
+    real*8,  dimension(:,:,:), allocatable :: U,V,W,R,E,Udot,Vdot,Wdot,Rdot,Edot
     logical, dimension(:,:,:), allocatable :: insideWall
     real*8,  dimension(:,:,:), allocatable :: Umean,Vmean,Wmean,Rmean,Emean
     real*8,  dimension(:,:,:), allocatable :: Unew,Vnew,Wnew,Rnew,Enew
@@ -116,6 +116,17 @@
     allocate(insideWall(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
     
     U = 0; V = 0; W = 0; R = 0; E = 0
+
+    if(saveDerivs) then
+        allocate(Udot(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(Vdot(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(Wdot(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(Rdot(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+        allocate(Edot(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)))
+    
+        Udot = 0; Vdot = 0; Wdot = 0; Rdot = 0; Edot = 0;
+    endif
+
     cpu_time = 0.0d0; comm_time = 0.0d0; io_time = 0.0d0; exp_time = 0.0d0; track_time = 0.0d0
     
     !include 'importFlow2.F90'
@@ -473,12 +484,24 @@
 
                 t1 = MPI_Wtime()
                 ! Collective export via mpi/hdf5 asynchronous I/O
-                call writeFlow(nSave,t,U,V,W,R,E, insideWall, NaN)
+                if(saveDerivs) then
+                    call writeFlowDerivs(nSave,t,U,V,W,R,E,Udot,Vdot,Wdot,Rdot,Edot, insideWall, NaN)
+                else
+                    call writeFlow(nSave,t,U,V,W,R,E, insideWall, NaN)
+                endif
                 io_time = io_time + (MPI_Wtime() - t1)
 
                 call decomp_2d_finalize
                 call MPI_FINALIZE(ierror)
                 stop
+            endif
+
+            if(saveDerivs) then
+                Udot = (Unew-U)/dt
+                Vdot = (Vnew-V)/dt
+                Wdot = (Wnew-W)/dt
+                Rdot = (Rnew-R)/dt
+                Edot = (Enew-E)/dt
             endif
 
         else
@@ -510,7 +533,11 @@
 
             t1 = MPI_Wtime(); t2 = MPI_Wtime(); t3 = MPI_Wtime()
             ! Collective export via mpi/hdf5 asynchronous I/O
-			call writeFlow(nSave,t,U,V,W,R,E, insideWall, NaN)
+			if(saveDerivs) then
+                call writeFlowDerivs(nSave,t,U,V,W,R,E,Udot,Vdot,Wdot,Rdot,Edot, insideWall, NaN)
+            else
+                call writeFlow(nSave,t,U,V,W,R,E, insideWall, NaN)
+            endif
             print *, 'Rank', nrank, ' -> writeFlow (disk):', (MPI_Wtime() - t3)
 
 			if(SFD.gt.0) then

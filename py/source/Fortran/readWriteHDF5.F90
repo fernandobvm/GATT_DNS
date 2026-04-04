@@ -5,7 +5,7 @@ module readWriteHDF5
   implicit none
   
   private
-  public :: readFlow, writeFlow, readSFD, &
+  public :: readFlow, writeFlow, writeFlowDerivs, readSFD, &
             readMeanFlow, writeMeanFlow, setup_hdf5_io, h5close
   
   integer :: i,j,k
@@ -147,8 +147,27 @@ contains
     endif
 
     call writeFile(filename, t, U, V, W, R, E, insideWall, NaN)
-
   end subroutine writeFlow
+
+  subroutine writeFlowDerivs(timeStep, t, U, V, W, R, E, Udot, Vdot, Wdot, Rdot, Edot, insideWall, NaN)
+    real*8, intent(out) :: t
+    real*8, intent(in) :: NaN
+    integer, intent(in) :: timeStep
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: Udot, Vdot, Wdot, Rdot, Edot
+    
+    character(len=100) :: filename
+
+    ! Criar filename
+    if (timeStep < 0) then
+      filename = "../flow_diverged.h5"
+    else
+      write(filename, '("../flow_", i10.10, ".h5")') timeStep
+    endif
+
+    call writeFileDerivs(filename, t, U, V, W, R, E, Udot, Vdot, Wdot, Rdot, Edot, insideWall, NaN)
+  end subroutine writeFlowDerivs
 
   subroutine writeMeanFlow(U, V, W, R, E, insideWall, NaN)
     real*8 :: t
@@ -308,6 +327,88 @@ contains
       call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
     endif
   end subroutine writeFile
+
+  subroutine writeFileDerivs(filename, t, U, V, W, R, E, Udot, Vdot, Wdot, Rdot, Edot, insideWall, NaN)
+    real*8, intent(in) :: t
+    real*8, intent(in) :: NaN
+    logical, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: insideWall
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: U, V, W, R, E
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)), intent(in) :: Udot, Vdot, Wdot, Rdot, Edot
+    
+    integer :: error, mpierr
+    integer(HSIZE_T) :: dims_scalar(1) = [1]
+    character(len=100), intent(in) :: filename
+    integer(HID_T) :: file_id, scalar_space, scalar_dset
+    real*8, dimension(xstart(1):xend(1), xstart(2):xend(2), xstart(3):xend(3)) :: Uw, Vw, Ww, Rw, Ew
+    
+    ! Substituir paredes por NaN localmente
+    Uw = U; Vw = V; Ww = W; Rw = R; Ew = E
+    do k = xstart(3), xend(3)
+        do j = xstart(2), xend(2)
+            do i = xstart(1), xend(1)
+                if (insideWall(i,j,k)) then
+                    Uw(i,j,k) = NaN
+                    Vw(i,j,k) = NaN
+                    Ww(i,j,k) = NaN
+                    Rw(i,j,k) = NaN
+                    Ew(i,j,k) = NaN
+                endif
+            enddo
+        enddo
+    enddo
+    
+    ! Criar arquivo com acesso paralelo
+    call h5fcreate_f(trim(filename), H5F_ACC_TRUNC_F, file_id, error, access_prp=plist_id)
+    if (error /= 0) then
+      print *, 'Rank', nrank, ': h5fcreate_f failed for ', trim(filename), ' (error=', error, ')'
+      call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+    endif
+    
+    ! Escrever tempo (apenas rank 0)
+    call h5screate_simple_f(1, dims_scalar, scalar_space, error)
+    if (error /= 0) then
+      print *, 'Rank', nrank, ': h5screate_simple_f failed for scalar (error=', error, ')'
+      call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+    endif
+
+    call h5dcreate_f(file_id, "t", H5T_NATIVE_DOUBLE, scalar_space, scalar_dset, error)
+    if (error /= 0) then
+      print *, 'Rank', nrank, ': h5dcreate_f failed for dataset t (error=', error, ')'
+      call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+    endif
+
+    if (nrank == 0) then
+      call h5dwrite_f(scalar_dset, H5T_NATIVE_DOUBLE, t, dims_scalar, error)
+      if (error /= 0) then
+        print *, 'Rank', nrank, ': h5dwrite_f failed for dataset t (error=', error, ')'
+        call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+      endif
+    endif
+    
+    call h5dclose_f(scalar_dset, error)
+    call h5sclose_f(scalar_space, error)
+
+    ! Escrever campos em paralelo
+    call write_3d_field(file_id, "U", U)
+    call write_3d_field(file_id, "V", V)
+    call write_3d_field(file_id, "W", W)
+    call write_3d_field(file_id, "R", R)
+    call write_3d_field(file_id, "E", E)
+
+    call write_3d_field(file_id, "Udot", Udot)
+    call write_3d_field(file_id, "Vdot", Vdot)
+    call write_3d_field(file_id, "Wdot", Wdot)
+    call write_3d_field(file_id, "Rdot", Rdot)
+    call write_3d_field(file_id, "Edot", Edot)
+    
+    ! Fechar arquivo
+    call h5fclose_f(file_id, error)
+    if (error /= 0) then
+      print *, 'Rank', nrank, ': h5fclose_f failed (error=', error, ')'
+      call MPI_ABORT(MPI_COMM_WORLD, error, mpierr)
+    endif
+  end subroutine writeFileDerivs
+
 
   subroutine read_3d_field(file_id, field_name, field_data)
     integer(HID_T), intent(in) :: file_id
